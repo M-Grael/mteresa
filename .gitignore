@@ -1,0 +1,17 @@
+# Ambientes virtuais
+.venv/
+venv/
+
+# Cache do Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Arquivos de Build e Distribuição do pacote Python
+*.egg-info/
+build/
+dist/
+
+data/
+*.csv
