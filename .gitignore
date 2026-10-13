@@ -15,3 +15,5 @@ dist/
 
 data/
 *.csv
+
+sandbox/
