@@ -5,7 +5,28 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mteresa"
 version = "0.1.0"
-dependencies = []
+description = "Python library for quantitative behavioural analysis"
+dependencies = [
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "scipy>=1.10.0",
+    "pymc>=5.0.0",
+    "arviz>=0.15.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "statsmodels>=0.14.0"
+]
+
+stan = [
+    "cmdstanpy>=1.3.0"
+]
+
+dev = [
+    "pytest>=7.0.0",
+    "pytest-mock>=3.10.0",
+    "ipython",
+    "jupyterlab"
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
