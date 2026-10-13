@@ -2,7 +2,6 @@ import cmdstanpy
 
 print("Iniciando instalação (isso pode demorar de 2 a 10 minutos)...")
 
-# Isso vai forçar o download completo e compilação no disco D:
 cmdstanpy.install_cmdstan(
     compiler=True, 
     dir=r"D:\03_renovacao\ASU\cmdstan", 
