@@ -146,9 +146,19 @@ def parse_mpc_file(msn_path: str) -> Dict[str, Any]:
 
 
 def parse_med_output_file(file_path: str) -> Dict[str, Any]:
-    """Lê o arquivo output uma única vez e retorna cabeçalho, mapeamentos e arrays."""
+    """Lê o arquivo output uma única vez e retorna cabeçalho, mapeamentos e arrays.
+
+    Cada array é devolvido de duas formas:
+
+    - ``result[letra]``: lista de ``float`` (uso numérico geral);
+    - ``result["_tokens"][letra]``: lista de ``str`` com o texto **original**
+      de cada valor. É necessária para arrays de eventos (``timestamp.evento``),
+      porque ``float`` perde zeros à direita (``1250.210`` -> ``1250.21``) e,
+      com isso, o código do evento (``.210``) deixa de ser reconhecível.
+    """
     result: Dict[str, Any] = {
-        "header": {}
+        "header": {},
+        "_tokens": {},
     }
     current_array = None
 
@@ -184,13 +194,15 @@ def parse_med_output_file(file_path: str) -> Dict[str, Any]:
             if array_match:
                 current_array = array_match.group(1)
                 result[current_array] = []
+                result["_tokens"][current_array] = []
                 continue
 
             if current_array:
                 data_match = re.search(r'^\s+\d+:\s+(.*)$', line)
                 if data_match:
-                    values = [float(v) for v in data_match.group(1).split()]
-                    result[current_array].extend(values)
+                    tokens = data_match.group(1).split()
+                    result[current_array].extend(float(t) for t in tokens)
+                    result["_tokens"][current_array].extend(tokens)
                 elif line.strip() != "":
                     current_array = None
 

@@ -79,7 +79,9 @@ def process_data(file: str, msn_folder_path: Optional[str] = None) -> Dict:
         - "header": session metadata (Subject, Box, MSN, ...);
         - "mappings": names/structure extracted from the `.MPC` file
           (events, indexed arrays, scalar variable mapping);
-        - "raw_data": the raw arrays/scalars (keys A-Z).
+        - "raw_data": the raw arrays/scalars (keys A-Z), as floats;
+        - "raw_tokens": the original text of every array value (keys A-Z),
+          needed to read ``timestamp.event`` codes without float rounding.
     """
     parsed_output = parse_med_output_file(file_path=file)
 
@@ -122,7 +124,10 @@ def process_data(file: str, msn_folder_path: Optional[str] = None) -> Dict:
     return {
         "header": parsed_output.get("header", {}),
         "mappings": msn_variables_dict,
-        "raw_data": {k: v for k, v in parsed_output.items() if k != "header"},
+        "raw_data": {
+            k: v for k, v in parsed_output.items() if k not in ("header", "_tokens")
+        },
+        "raw_tokens": parsed_output.get("_tokens", {}),
     }
 
 
@@ -139,6 +144,20 @@ _EVENT_KEY_MIN_MATCH_RATIO = 0.8
 # too ambiguous (a few values matching by chance is not unlikely).
 _EVENT_KEY_MIN_SAMPLE_SIZE = 5
 _EVENT_KEY_MAX_SAMPLE_SIZE = 20
+
+
+# MED-PC prints array values with three decimals, so an event code such as
+# ".010" is always three digits long in the output file.
+_EVENT_CODE_DIGITS = 3
+
+
+def _canonical_code(digits: str) -> str:
+    """Canonical form of the fractional digits of an event code.
+
+    ``.21`` and ``.210`` are the same number, so trailing zeros are
+    ignored; leading zeros are significant (``.010`` != ``.100`` != ``.001``).
+    """
+    return digits.rstrip("0") or "0"
 
 
 def guess_event_key(
@@ -158,10 +177,15 @@ def guess_event_key(
     which produces false positives with arrays that just happen to have
     a decimal value resembling an event code.
 
+    The array values should be the original **strings** (``raw_tokens``),
+    not floats: a float cannot tell ``1250.210`` from ``1250.21``.
+
     Returns `None` if no array satisfies the criteria (minimum sample
     size + minimum match ratio).
     """
-    known_codes = {str(code).strip(".") for code in known_event_codes}
+    known_codes = {
+        _canonical_code(str(code).strip().lstrip(".")) for code in known_event_codes
+    }
     if not known_codes:
         return None
 
@@ -179,7 +203,7 @@ def guess_event_key(
             if "." not in item_str:
                 continue
             _, decimal_part = item_str.split(".", 1)
-            if decimal_part in known_codes:
+            if _canonical_code(decimal_part) in known_codes:
                 matches += 1
 
         if matches / len(sample) >= min_match_ratio:
@@ -232,6 +256,17 @@ def split_event_array(values: List, event_aliases: Dict[str, str]) -> Dict[str, 
     N events becomes N rows, each with a timestamp, the event code and
     its human-readable name.
 
+    ``values`` must be the original **strings** (``raw_tokens``), e.g.
+    ``"1250.210"``. Converting to float first would lose trailing zeros
+    (``1250.21``), turning code ``.210`` into ``21`` and making ``.100``
+    and ``.001`` both collapse into ``1``.
+
+    The event code is the fractional part read as three digits
+    (``.010`` -> 10, ``.100`` -> 100, ``.001`` -> 1). Aliases are matched
+    by numeric value of the fraction, so ``.21`` in the `.MPC` file
+    matches ``.210`` in the data file, while ``.010`` and ``.100`` stay
+    distinct.
+
     When a value has no decimal part, ``event_type = 0`` is assumed
     (same convention as the original parser).
     """
@@ -239,22 +274,23 @@ def split_event_array(values: List, event_aliases: Dict[str, str]) -> Dict[str, 
     event_types: List[int] = []
     event_aliases_list: List[str] = []
 
+    alias_by_code = {
+        _canonical_code(str(code).strip().lstrip(".")): name
+        for code, name in event_aliases.items()
+    }
+
     for raw_value in values:
-        value_str = str(raw_value)  # avoids scientific notation on large floats
-        if "." in value_str:
-            ts_part, ev_part = value_str.split(".", 1)
-            timestamps.append(int(ts_part))
-            event_types.append(int(ev_part))
-            # Look up the alias using the ORIGINAL string (preserves
-            # leading zeros, e.g. "05"), not the int-converted value --
-            # otherwise ".05" in the .MPC file would never match ".5".
-            event_aliases_list.append(
-                event_aliases.get(f".{ev_part}", f"UNKNOWN_{ev_part}")
-            )
+        ts_part, _, code_digits = str(raw_value).strip().partition(".")
+        timestamps.append(int(ts_part))
+        if code_digits:
+            event_types.append(int(code_digits.ljust(_EVENT_CODE_DIGITS, "0")))
+            label = code_digits
         else:
-            timestamps.append(int(raw_value))
             event_types.append(0)
-            event_aliases_list.append(event_aliases.get(".0", "UNKNOWN_0"))
+            label = "0"
+        event_aliases_list.append(
+            alias_by_code.get(_canonical_code(label), f"UNKNOWN_{label}")
+        )
 
     return {
         "timestamp": timestamps,
@@ -341,20 +377,26 @@ def clean(
     msn_name = str(header.get("MSN", "UNKNOWN_MSN"))
 
     raw_data = processed_data.get("raw_data", {})
+    # Original text of each array value; falls back to the float values if
+    # absent (e.g. a hand-built `processed_data`).
+    raw_tokens = processed_data.get("raw_tokens", {})
     mappings = processed_data.get("mappings", {})
     event_aliases = mappings.get("events", {})
     arrays_info = mappings.get("arrays", {})
     scalar_mapping = mappings.get("mapping", {})
 
     if guess_event and event_key is None:
-        event_key = guess_event_key(raw_data, event_aliases.keys())
+        candidates = {k: raw_tokens.get(k, v) for k, v in raw_data.items()}
+        event_key = guess_event_key(candidates, event_aliases.keys())
 
     unmapped_keys: List[str] = []
 
     for key, value in raw_data.items():
         # (a) Event array: becomes parallel lists, ready to be exploded later.
         if event_key is not None and key == event_key:
-            cleaned.update(split_event_array(value, event_aliases))
+            cleaned.update(
+                split_event_array(raw_tokens.get(key, value), event_aliases)
+            )
             continue
 
         # (b) Array whose positions are individually mapped in the .MPC file.
