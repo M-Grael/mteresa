@@ -433,6 +433,80 @@ def clean(
 # =============================================================================
 # 5. Batch reading of an entire folder
 # =============================================================================
+def _find_irt_col(df, irt_key):
+    """Return the name of the column holding the IRT list, or None.
+
+    Candidates are the column named exactly ``<irt_key>`` (variable with no
+    name in the `.MPC`) or starting with ``<irt_key>_`` (columns are already
+    lowercased) **and** containing at least one list. The second condition
+    avoids picking unrelated scalar columns that merely share the letter
+    (e.g. the scalar ``c`` of another MSN in a mixed folder).
+    """
+    if irt_key is None:
+        return None
+
+    key = irt_key.lower()
+    prefix = f"{key}_"
+    is_list = lambda x: isinstance(x, list)
+    matching_cols = [
+        col for col in df.columns
+        if (col == key or col.startswith(prefix)) and df[col].map(is_list).any()
+    ]
+    if not matching_cols:
+        logger.warning(
+            "irt_key=%r: no column named '%s' or starting with '%s' holds "
+            "lists. Skipping IRT calculation.",
+            irt_key, key, prefix,
+        )
+        return None
+    if len(matching_cols) > 1:
+        logger.warning(
+            "irt_key=%r matched multiple columns %s; using the first one.",
+            irt_key, matching_cols,
+        )
+    return matching_cols[0]
+
+
+def _explode_irt(df, irt_col):
+    """One row per IRT value, with a 1-based ``irt_index``.
+
+    Only sessions whose ``irt_col`` is a list are expanded; every other
+    row (e.g. event sessions in a mixed folder) is kept as a single row
+    with ``irt_index`` empty. Trailing zeros of the MED-PC array (unused
+    positions) are removed, but only from rows that came from an IRT list.
+    """
+    if 'timestamp' in df.columns:
+        has_events = df['timestamp'].notna()   # already exploded: scalar per row
+    else:
+        has_events = pd.Series(False, index=df.index)
+
+    pairs = []
+    n_both = 0
+    for value, is_event_row in zip(df[irt_col], has_events):
+        if isinstance(value, list):
+            if is_event_row:
+                n_both += 1                      # events win; keep the list as is
+                pairs.append(([None], [value]))
+            else:
+                pairs.append((list(range(1, len(value) + 1)), value))
+        else:
+            pairs.append(([None], [value]))
+
+    if n_both:
+        logger.warning(
+            "%d event row(s) also hold an IRT list in '%s'; events take "
+            "precedence and the list was left unexpanded.", n_both, irt_col,
+        )
+
+    df = df.copy()
+    df['irt_index'] = pd.Series([p[0] for p in pairs], index=df.index, dtype=object)
+    df[irt_col] = pd.Series([p[1] for p in pairs], index=df.index, dtype=object)
+    df = df.explode(['irt_index', irt_col]).reset_index(drop=True)
+
+    from_irt_list = df['irt_index'].notna()
+    return df[~from_irt_list | (df[irt_col] != 0)]
+
+
 def _styling_final_dataframe(df, drop_zeros, drop_lists, guess_session, irt_key):
     # ========================================================================
     #                         HANDLE DATE FORMAT
@@ -491,36 +565,18 @@ def _styling_final_dataframe(df, drop_zeros, drop_lists, guess_session, irt_key)
     # ========================================================================
     #                             EXPLODE
     # ========================================================================
-    if 'timestamp' in list(df.columns.values):
+    # Events and IRT are independent: a mixed folder can hold sessions of
+    # both kinds, so neither step may disable the other.
+    df = df.reset_index(drop=True)
+    irt_col = _find_irt_col(df, irt_key)
+
+    if 'timestamp' in df.columns:
         df = df.explode(['timestamp', 'event_type', 'event_alias'])
         df = df.reset_index(drop=True)
-    else:
-        if irt_key is not None:
-            candidate_cols = list(df.columns)
-            matching_cols = [
-                col for col in candidate_cols
-                if col.startswith(f'{irt_key.lower()}_')
-            ]
-            if not matching_cols:
-                logger.warning(
-                    "irt_key=%r: no column found starting with '%s_'. "
-                    "Skipping IRT calculation. Available columns: %s",
-                    irt_key, irt_key.lower(), candidate_cols,
-                )
-                irt_col = None
-            else:
-                if len(matching_cols) > 1:
-                    logger.warning(
-                        "irt_key=%r matched multiple columns %s; using the first one.",
-                        irt_key, matching_cols,
-                    )
-                irt_col = matching_cols[0]
 
-                df['irt_index'] = df[irt_col].apply(
-                    lambda x: list(range(1, len(x) + 1)) if isinstance(x, list) else None
-                )
-                df = df.explode(['irt_index', irt_col])
-                df = df[df['c_irt_data_array'] != 0]
+    if irt_col is not None:
+        df = _explode_irt(df, irt_col)
+
     # ========================================================================
     #                         DROP COLUMNS
     # ========================================================================
