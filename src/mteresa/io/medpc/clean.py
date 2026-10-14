@@ -40,7 +40,8 @@ import logging
 from os import walk
 from os.path import join, dirname
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Literal, Optional, Tuple
+import warnings
 
 import pandas as pd
 
@@ -552,8 +553,9 @@ def read_med_folder(
     irt_key: Optional[str] = None,
     drop_zeros: bool = True,
     drop_lists: bool = False,
-    guess_session: bool = False
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    guess_session: bool = False,
+    on_error: Literal["warn", "raise", "skip"] = "warn",
+) -> pd.DataFrame:
     """Read all data files in a folder into a single long-format DataFrame.
 
     Every file in `folder_path` is treated as a candidate session, except
@@ -561,8 +563,7 @@ def read_med_folder(
     program files, and spreadsheet exports like `.xlsx`/`.csv` that may
     already sit in the same folder from a previous run). Files that pass
     this filter but still turn out not to be MED-PC sessions (e.g. no
-    `MSN` in the header) are caught individually and reported in `issues`,
-    rather than stopping the whole run.
+    `MSN` in the header) are handled according to `on_error`.
 
     Variables with no mapping in their `.MPC` file are namespaced with
     the MSN name (see `clean`), so combining everything into a single
@@ -579,11 +580,20 @@ def read_med_folder(
     drop_zeros:
         If True, drops columns containing all values equal 0.
     drop_lists:
-        If True, drops columns containing lists 
+        If True, drops columns containing lists.
     guess_session:
-        If true, creates a collum called `session` in df by counting sessions
-        of each subject. The count need to be continuous for each subject.
-    
+        If True, creates a column called `session` by counting the sessions
+        of each subject. The count needs to be continuous for each subject.
+    on_error:
+        What to do when a file fails to process:
+
+        - ``"warn"`` (default): skip the file and emit one summary warning.
+        - ``"raise"``: stop at the first failure (``RuntimeError`` naming
+          the file, chained to the original exception).
+        - ``"skip"``: skip the file silently.
+
+        With ``"warn"`` and ``"skip"``, the failures are kept in
+        ``df.attrs["issues"]`` (see Returns).
 
     Returns
     -------
@@ -594,12 +604,17 @@ def read_med_folder(
             sessions.explode(["timestamp", "event_type", "event_alias"])
 
         Use the "MSN" column to filter/group sessions by program when
-        needed.
-    issues:
-        Log DataFrame with one row per file that failed to process
-        (columns ``file``, ``error``), for later inspection -- instead
-        of messages lost in the console.
+        needed. Files that failed are listed in ``sessions.attrs["issues"]``
+        as a list of ``{"file": ..., "error": ...}`` dicts; use
+        ``pd.DataFrame(sessions.attrs["issues"])`` for a table. (A plain
+        list, not a DataFrame: pandas compares ``attrs`` with ``==`` when
+        printing or concatenating, which breaks on DataFrame values.)
     """
+    if on_error not in ("warn", "raise", "skip"):
+        raise ValueError(
+            f"on_error must be 'warn', 'raise' or 'skip', got {on_error!r}"
+        )
+
     rows: List[Dict] = []
     issues: List[Dict[str, str]] = []
 
@@ -616,25 +631,43 @@ def read_med_folder(
                     guess_event=guess_event,
                 )
             except Exception as exc:
-                logger.warning("Failed to process '%s': %s", file_path, exc)
+                if on_error == "raise":
+                    raise RuntimeError(
+                        f"Failed to process '{file_path}': {exc}"
+                    ) from exc
+
+                # "warn" and "skip" both continue; they differ in noise.
+                log = logger.warning if on_error == "warn" else logger.debug
+                log("Failed to process '%s': %s", file_path, exc)
                 issues.append({"file": file_path, "error": str(exc)})
                 continue
 
             rows.append(session)
 
-    sessions_df = pd.DataFrame(rows)
-    issues_df = pd.DataFrame(issues, columns=["file", "error"])
+    if not rows:
+        first = "; ".join(f"{i['file']}: {i['error']}" for i in issues[:3])
+        raise ValueError(
+            f"No valid MED-PC sessions found in '{folder_path}'. "
+            f"{len(issues)} file(s) failed" + (f" (first: {first})" if first else "")
+        )
 
     sessions_df = _styling_final_dataframe(
-        sessions_df,
+        pd.DataFrame(rows),
         drop_zeros,
         drop_lists,
         guess_session,
-        irt_key
+        irt_key,
     )
 
-    return sessions_df
+    sessions_df.attrs["issues"] = issues  # list of dicts; assign AFTER styling
 
+    if issues and on_error == "warn":
+        warnings.warn(
+            f"{len(issues)} file(s) failed to process; see df.attrs['issues'].",
+            stacklevel=2,
+        )
+
+    return sessions_df
 
 # =============================================================================
 # Quick manual smoke test (not part of the module's public API)
