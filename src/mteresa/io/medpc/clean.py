@@ -37,15 +37,19 @@ exists.
 from __future__ import annotations
 
 import logging
+import warnings
 from os import walk
 from os.path import join, dirname
 from pathlib import Path
-from typing import Dict, Iterable, List, Literal, Optional, Tuple
-import warnings
+from typing import Dict, Iterable, List, Literal, Optional
 
 import pandas as pd
 
-from mteresa.io.medpc.parse_med import parse_mpc_file, parse_med_output_file
+from mteresa.io.medpc.parse_med import (
+    parse_mpc_file,
+    parse_med_output_file,
+    parse_med_output_sessions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +66,11 @@ _NON_SESSION_EXTENSIONS = {".mpc", ".mac", ".xlsx", ".xls", ".csv"}
 # =============================================================================
 
 def process_data(file: str, msn_folder_path: Optional[str] = None) -> Dict:
-    """Read a MED-PC data file and its corresponding `.MPC` (MSN) program.
+    """Read a MED-PC data file (ONE session) and its `.MPC` (MSN) program.
+
+    For files that hold several sessions use `read_med_folder`, or
+    `parse_med_output_sessions` plus `build_processed_session`; this
+    function raises ``ValueError`` for them instead of keeping only one.
 
     Parameters
     ----------
@@ -85,7 +93,17 @@ def process_data(file: str, msn_folder_path: Optional[str] = None) -> Dict:
           needed to read ``timestamp.event`` codes without float rounding.
     """
     parsed_output = parse_med_output_file(file_path=file)
+    return build_processed_session(parsed_output, file, msn_folder_path)
 
+
+def build_processed_session(
+    parsed_output: Dict, file: str, msn_folder_path: Optional[str] = None
+) -> Dict:
+    """Attach the `.MPC` mappings to ONE parsed session (see `process_data`).
+
+    `parsed_output` is one item of `parse_med_output_sessions(file)`; `file`
+    is only used to locate the `.MPC` and for messages.
+    """
     # The MED OUTPUT header already carries the MSN used in the session.
     # If it's missing, this almost certainly isn't a raw MED-PC data file
     # at all (e.g. a leftover .xlsx export, or some other file that ended
@@ -601,6 +619,29 @@ def _styling_final_dataframe(df, drop_zeros, drop_lists, guess_session, irt_key)
     return df
 
 
+def _handle_failure(
+    exc: Exception,
+    file_path: str,
+    session_index: Optional[int],
+    n_sessions: int,
+    on_error: str,
+    issues: List[Dict],
+) -> None:
+    """Apply the `on_error` policy to one failed file (or one session of it)."""
+    where = (
+        file_path
+        if n_sessions <= 1
+        else f"{file_path} [session {session_index} of {n_sessions}]"
+    )
+    if on_error == "raise":
+        raise RuntimeError(f"Failed to process '{where}': {exc}") from exc
+
+    # "warn" and "skip" both continue; they differ in noise.
+    log = logger.warning if on_error == "warn" else logger.debug
+    log("Failed to process '%s': %s", where, exc)
+    issues.append({"file": file_path, "session": session_index, "error": str(exc)})
+
+
 def read_med_folder(
     folder_path: str,
     msn_folder_path: Optional[str] = None,
@@ -614,12 +655,16 @@ def read_med_folder(
 ) -> pd.DataFrame:
     """Read all data files in a folder into a single long-format DataFrame.
 
-    Every file in `folder_path` is treated as a candidate session, except
+    Every file in `folder_path` is treated as a candidate data file, except
     those with an extension in `_NON_SESSION_EXTENSIONS` (`.MPC`/`.MAC`
     program files, and spreadsheet exports like `.xlsx`/`.csv` that may
     already sit in the same folder from a previous run). Files that pass
     this filter but still turn out not to be MED-PC sessions (e.g. no
     `MSN` in the header) are handled according to `on_error`.
+
+    A data file may hold several sessions (MED-PC appends them when the
+    same file name is reused): each ``Start Date:`` block is read as its own
+    session, and a failure in one block does not discard the others.
 
     Variables with no mapping in their `.MPC` file are namespaced with
     the MSN name (see `clean`), so combining everything into a single
@@ -661,7 +706,9 @@ def read_med_folder(
 
         Use the "MSN" column to filter/group sessions by program when
         needed. Files that failed are listed in ``sessions.attrs["issues"]``
-        as a list of ``{"file": ..., "error": ...}`` dicts; use
+        as a list of ``{"file": ..., "session": ..., "error": ...}`` dicts
+        (``session`` is the 1-based block in that file, or ``None`` when
+        the whole file could not be read); use
         ``pd.DataFrame(sessions.attrs["issues"])`` for a table. (A plain
         list, not a DataFrame: pandas compares ``attrs`` with ``==`` when
         printing or concatenating, which breaks on DataFrame values.)
@@ -680,25 +727,27 @@ def read_med_folder(
                 continue  # program files or leftover exports, not session data
 
             file_path = join(root, file_name)
-            try:
-                session = clean(
-                    process_data(file_path, msn_folder_path),
-                    event_key=event_key,
-                    guess_event=guess_event,
-                )
-            except Exception as exc:
-                if on_error == "raise":
-                    raise RuntimeError(
-                        f"Failed to process '{file_path}': {exc}"
-                    ) from exc
 
-                # "warn" and "skip" both continue; they differ in noise.
-                log = logger.warning if on_error == "warn" else logger.debug
-                log("Failed to process '%s': %s", file_path, exc)
-                issues.append({"file": file_path, "error": str(exc)})
+            # A data file can hold several sessions (one per "Start Date:").
+            try:
+                parsed_sessions = parse_med_output_sessions(file_path)
+            except Exception as exc:
+                _handle_failure(exc, file_path, None, 0, on_error, issues)
                 continue
 
-            rows.append(session)
+            n_sessions = len(parsed_sessions)
+            for index, parsed in enumerate(parsed_sessions, start=1):
+                try:
+                    session = clean(
+                        build_processed_session(parsed, file_path, msn_folder_path),
+                        event_key=event_key,
+                        guess_event=guess_event,
+                    )
+                except Exception as exc:
+                    _handle_failure(exc, file_path, index, n_sessions, on_error, issues)
+                    continue
+
+                rows.append(session)
 
     if not rows:
         first = "; ".join(f"{i['file']}: {i['error']}" for i in issues[:3])
@@ -724,6 +773,7 @@ def read_med_folder(
         )
 
     return sessions_df
+
 
 # =============================================================================
 # Quick manual smoke test (not part of the module's public API)

@@ -1,7 +1,7 @@
 import os
 import re
 import string
-from typing import Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 
 def parse_mpc_file(msn_path: str) -> Dict[str, Any]:
@@ -145,8 +145,37 @@ def parse_mpc_file(msn_path: str) -> Dict[str, Any]:
     return result
 
 
-def parse_med_output_file(file_path: str) -> Dict[str, Any]:
-    """Lê o arquivo output uma única vez e retorna cabeçalho, mapeamentos e arrays.
+_SESSION_START_RE = re.compile(r"^Start Date:", re.MULTILINE)
+_FILE_LINE_RE = re.compile(r"^File:.*$", re.MULTILINE)
+
+
+def _split_sessions(text: str) -> List[str]:
+    """Divide o texto de um arquivo de dados MED-PC em um bloco por sessão.
+
+    O MED-PC pode acumular várias sessões no mesmo arquivo. Cada sessão
+    começa em uma linha ``Start Date:``. A linha ``File: ...`` que o
+    MED-PC escreve imediatamente antes de cada sessão é levada junto com
+    a sessão a que pertence, e não com a anterior.
+
+    Um arquivo sem nenhum ``Start Date:`` (ou com um só) vira um único
+    bloco com o texto inteiro, o que preserva o comportamento antigo.
+    """
+    starts = [m.start() for m in _SESSION_START_RE.finditer(text)]
+    if len(starts) <= 1:
+        return [text]
+
+    cuts = [0]
+    for current, following in zip(starts, starts[1:]):
+        segment = text[current:following]
+        file_lines = list(_FILE_LINE_RE.finditer(segment))
+        cuts.append(current + file_lines[-1].start() if file_lines else following)
+    cuts.append(len(text))
+
+    return [text[a:b] for a, b in zip(cuts, cuts[1:])]
+
+
+def _parse_session_text(text: str) -> Dict[str, Any]:
+    """Interpreta o texto de UMA sessão (cabeçalho, escalares e arrays).
 
     Cada array é devolvido de duas formas:
 
@@ -162,51 +191,81 @@ def parse_med_output_file(file_path: str) -> Dict[str, Any]:
     }
     current_array = None
 
-    if not file_path or not os.path.exists(file_path):
-        print(f"Aviso: Arquivo não encontrado - {file_path}")
-        return result
-
     header_pattern = re.compile(
         r'^(Start Date|End Date|Subject|Experiment|Group|'
         r'Box|Start Time|End Time|MSN):\s*(.*)$'
     )
 
-    with open(file_path, "r", errors="replace") as handle:
-        for line in handle:
-            line = line.rstrip()
+    for line in text.splitlines():
+        line = line.rstrip()
 
-            header_match = header_pattern.search(line)
-            if header_match:
-                key = header_match.group(1)
-                value = header_match.group(2).strip()
-                result["header"][key] = value
-                continue
+        header_match = header_pattern.search(line)
+        if header_match:
+            key = header_match.group(1)
+            value = header_match.group(2).strip()
+            result["header"][key] = value
+            continue
 
-            map_match = re.search(r'^([A-Z]):\s+([-+]?\d*\.?\d+)$', line)
-            if map_match:
-                var_name = map_match.group(1)
-                var_value = map_match.group(2)
-                result[var_name] = float(var_value)
+        map_match = re.search(r'^([A-Z]):\s+([-+]?\d*\.?\d+)$', line)
+        if map_match:
+            var_name = map_match.group(1)
+            var_value = map_match.group(2)
+            result[var_name] = float(var_value)
+            current_array = None
+            continue
+
+        array_match = re.search(r'^([A-Z]):$', line)
+        if array_match:
+            current_array = array_match.group(1)
+            result[current_array] = []
+            result["_tokens"][current_array] = []
+            continue
+
+        if current_array:
+            data_match = re.search(r'^\s+\d+:\s+(.*)$', line)
+            if data_match:
+                tokens = data_match.group(1).split()
+                result[current_array].extend(float(t) for t in tokens)
+                result["_tokens"][current_array].extend(tokens)
+            elif line.strip() != "":
                 current_array = None
-                continue
-
-            array_match = re.search(r'^([A-Z]):$', line)
-            if array_match:
-                current_array = array_match.group(1)
-                result[current_array] = []
-                result["_tokens"][current_array] = []
-                continue
-
-            if current_array:
-                data_match = re.search(r'^\s+\d+:\s+(.*)$', line)
-                if data_match:
-                    tokens = data_match.group(1).split()
-                    result[current_array].extend(float(t) for t in tokens)
-                    result["_tokens"][current_array].extend(tokens)
-                elif line.strip() != "":
-                    current_array = None
 
     return result
+
+
+def parse_med_output_sessions(file_path: str) -> List[Dict[str, Any]]:
+    """Lê um arquivo de dados MED-PC e retorna uma sessão por ``Start Date:``.
+
+    Cada item da lista tem o formato descrito em ``_parse_session_text``.
+    Retorna uma lista vazia se o arquivo não existir.
+    """
+    if not file_path or not os.path.exists(file_path):
+        print(f"Aviso: Arquivo não encontrado - {file_path}")
+        return []
+
+    with open(file_path, "r", errors="replace") as handle:
+        text = handle.read()
+
+    return [_parse_session_text(block) for block in _split_sessions(text)]
+
+
+def parse_med_output_file(file_path: str) -> Dict[str, Any]:
+    """Lê um arquivo de dados MED-PC que contém UMA sessão.
+
+    Se o arquivo tiver mais de uma sessão, levanta ``ValueError`` em vez de
+    devolver só uma delas em silêncio; use ``parse_med_output_sessions``.
+    """
+    if not file_path or not os.path.exists(file_path):
+        print(f"Aviso: Arquivo não encontrado - {file_path}")
+        return {"header": {}, "_tokens": {}}
+
+    sessions = parse_med_output_sessions(file_path)
+    if len(sessions) > 1:
+        raise ValueError(
+            f"'{file_path}' contains {len(sessions)} sessions; use "
+            "parse_med_output_sessions() (or read_med_folder) to read all of them."
+        )
+    return sessions[0]
 
 
 if __name__ == "__main__":
