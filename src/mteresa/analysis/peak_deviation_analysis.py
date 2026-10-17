@@ -4,7 +4,7 @@ from os.path import join
 import ast
 
 
-def peak_deviation_analysis(df, burst_cutoff=6):
+def peak_deviation_analysis(irt_column, timestamp_column = None, dataframe=None, burst_cutoff=6, min_irts=25):
     '''
     Implements Peak Deviation Analysis (Richards et al., 1993).
     
