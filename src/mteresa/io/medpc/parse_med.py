@@ -266,7 +266,3 @@ def parse_med_output_file(file_path: str) -> Dict[str, Any]:
             "parse_med_output_sessions() (or read_med_folder) to read all of them."
         )
     return sessions[0]
-
-
-if __name__ == "__main__":
-    print("[PRINT DO PARSE_MED]", parse_med_output_file(r'D:\03_renovacao\ASU\graja\test_fafa\exemplo_output_med_3.txt'))
