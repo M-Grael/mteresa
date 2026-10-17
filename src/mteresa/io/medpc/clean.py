@@ -773,36 +773,3 @@ def read_med_folder(
         )
 
     return sessions_df
-
-
-# =============================================================================
-# Quick manual smoke test (not part of the module's public API)
-# =============================================================================
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-    fafa_file_path = r'D:\03_renovacao\ASU\graja\teste_data\fafa_teste_data'
-    fafa_msn_path = r'D:\03_renovacao\ASU\graja\teste_data\fafa_teste_data'
-
-    sofia_file_path = r'D:\03_renovacao\ASU\graja\teste_data\sofia_teste_data'
-    sofia_msn_path = r'D:\03_renovacao\ASU\graja\teste_data\sofia_teste_data'
-
-    grael_file_path = r'D:\03_renovacao\ASU\graja\teste_data\grael_teste_data'
-    grael_msn_path = r'D:\03_renovacao\ASU\graja\teste_data\grael_teste_data'
-
-
-    # sessions_fafa  = read_med_folder(fafa_file_path, guess_session=True, drop_lists=True)
-    # sessions_sofia = read_med_folder(sofia_file_path, sofia_msn_path, guess_session=True)
-
-    sessions_grael = read_med_folder(grael_file_path, grael_msn_path, irt_key='C')
-
-    # print("\n=== INFO FAFA ===")
-    # sessions_fafa.info(verbose=True, show_counts=True)
-
-    # print("\n=== INFO SOFIA ===")
-    # sessions_sofia.info(verbose=True, show_counts=True)
-    # sessions_fafa.info(verbose=True, show_counts=True)
-    # print(sessions_fafa)
-    print(sessions_grael)
-    print('========================================================================')
