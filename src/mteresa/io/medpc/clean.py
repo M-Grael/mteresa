@@ -586,6 +586,8 @@ def _styling_final_dataframe(df, drop_zeros, drop_lists, guess_session, irt_key)
     # Events and IRT are independent: a mixed folder can hold sessions of
     # both kinds, so neither step may disable the other.
     df = df.reset_index(drop=True)
+    df['session_id'] = df.index
+    
     irt_col = _find_irt_col(df, irt_key)
 
     if 'timestamp' in df.columns:
@@ -596,7 +598,7 @@ def _styling_final_dataframe(df, drop_zeros, drop_lists, guess_session, irt_key)
         df = _explode_irt(df, irt_col)
 
     # ========================================================================
-    #                         DROP COLUMNS
+    #                          DROP COLUMNS
     # ========================================================================
     if drop_zeros:
         df = df.loc[:, (df != 0).any(axis=0)]
@@ -616,6 +618,20 @@ def _styling_final_dataframe(df, drop_zeros, drop_lists, guess_session, irt_key)
     except Exception as erro:
         print(f"Error converting subject to number: {erro}")
     df = df.reset_index(drop=True)
+    
+    # ========================================================================
+    #                     IRT INTO TIMESTAMP COLUMN
+    # ========================================================================
+    if irt_col is not None:
+        df = df.sort_values(['session_id', 'irt_index'], kind='stable')
+        is_irt = df['irt_index'].notna()
+        df['irts'] = pd.to_numeric(df[irt_col], errors='coerce')  
+        ts = df.loc[is_irt].groupby('session_id')['irts'].cumsum()
+        df.loc[is_irt, 'timestamp'] = ts
+        df['event_type'] = '---'
+        df['event_alias'] = 'operant generic response'
+
+
     return df
 
 
