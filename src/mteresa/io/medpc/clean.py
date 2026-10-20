@@ -586,7 +586,7 @@ def _styling_final_dataframe(df, drop_zeros, drop_lists, guess_session, irt_key)
     # Events and IRT are independent: a mixed folder can hold sessions of
     # both kinds, so neither step may disable the other.
     df = df.reset_index(drop=True)
-    df['session_id'] = df.index
+    df['session_id'] = df.index + 1
     
     irt_col = _find_irt_col(df, irt_key)
 
