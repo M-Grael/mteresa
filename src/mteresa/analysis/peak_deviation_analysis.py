@@ -209,7 +209,7 @@ def peak_deviation_analysis(df, burst_cutoff=6, min_irts=25):
 
 if __name__ == '__main__':
     import mteresa as mts
-    PATH = join('sandbox', 'data_test', 'grael_teste_data')
-    df = mts.read_medpc(PATH, PATH, irt_key='C')
+    PATH = join('sandbox','graja.csv')
+    df = pd.read_csv(PATH, encoding='latin-1')
 
-    print(peak_deviation_analysis(df))
+    print(df)
