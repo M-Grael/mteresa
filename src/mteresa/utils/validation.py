@@ -3,7 +3,6 @@ def validate_df(df, schema=None):
     if df.empty:
         raise ValueError("O DataFrame está vazio.")
     else: print('ok')
+
     
-    # Exemplo de checagem simples
-    # Se usar schema.py, a verificação pode ser feita aqui
     return True

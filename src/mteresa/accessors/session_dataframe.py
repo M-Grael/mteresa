@@ -16,3 +16,6 @@ class MTeresaAccessor:
     def filter_events(self, events_to_keep: str | List[str] = None, event_column: str = 'event_alias'):
         _filter_events(self._obj, events_to_keep=events_to_keep, event_column=event_column)    
         return self.obj
+
+    def summary_events(self):
+        return None
