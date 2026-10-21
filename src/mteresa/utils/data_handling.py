@@ -1,7 +1,6 @@
 import pandas as pd
-from typing import List
 
-def filter_events(df, events_to_keep: str | List[str] = None, event_column: str = 'event_alias'):  
+def filter_events(df, events_to_keep: str | list[str] = None, event_column: str = 'event_alias'):  
     """
     Params:
         df: the dataframe being filtred. Could be a dataframe from cleaning functions
