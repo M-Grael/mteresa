@@ -9,4 +9,4 @@ class MTeresaAccessor:
     def validate_df(self, schema=None):
         """Valida o DataFrame atual usando as regras do mteresa."""
         _validate_df(self._obj, schema=schema)
-        return self._obj  # Retornar self._obj permite encadear métodos (method chaining)
+        return self._obj
