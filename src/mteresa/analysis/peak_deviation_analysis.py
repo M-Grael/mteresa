@@ -10,6 +10,8 @@ def _validate_df(df):
 def peak_deviation_analysis(df, burst_cutoff: int = 6, min_irts: int = 25, grouping_session: str = 'granulated', filter_events: str | list[str] = None): # type: ignore
     _validate_df(df)
     return None
+
+
 # def peak_deviation_analysis(irt_column, timestamp_column = None, dataframe=None, burst_cutoff=6, min_irts=25):
 #     '''
 #     Implements Peak Deviation Analysis (Richards et al., 1993).
