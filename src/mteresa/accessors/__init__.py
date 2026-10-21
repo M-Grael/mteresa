@@ -1,4 +1,5 @@
-from .session_dataframe import MTeresaDataFrameAccessor
+# src/mteresa/__init__.py
 
-# Se no futuro criar um para Series:
-# from .series import MTeresaSeriesAccessor
+from mteresa.accessors import session_dataframe
+
+__version__ = "0.1.0"
