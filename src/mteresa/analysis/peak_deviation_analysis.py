@@ -1,16 +1,15 @@
 import pandas as pd
 import numpy as np
 from os.path import join
-import ast
+from collections import Dict, Iterable, List, Literal, Optional
 
 def _validate_df(df):
     columns = df.columns.values
     return print(columns)
 
-def peak_deviation_analysis(df, burst_cutoff=6, min_irts=25):
+def peak_deviation_analysis(df, burst_cutoff: int = 6, min_irts: int = 25, grouping_session: Optional = 'granulated', filter_events: str | List[str] = None):
     _validate_df(df)
     return None
-
 # def peak_deviation_analysis(irt_column, timestamp_column = None, dataframe=None, burst_cutoff=6, min_irts=25):
 #     '''
 #     Implements Peak Deviation Analysis (Richards et al., 1993).
@@ -210,6 +209,6 @@ def peak_deviation_analysis(df, burst_cutoff=6, min_irts=25):
 if __name__ == '__main__':
     import mteresa as mts
     PATH = join('sandbox','graja.csv')
-    df = pd.read_csv(PATH, encoding='latin-1')
+    df = pd.read_csv(PATH)
 
-    print(df)
+    peak_deviation_analysis(df)
