@@ -1,8 +1,5 @@
 import pandas as pd
 
-import pandas as pd
-
-
 def filter_events(
     df: pd.DataFrame,
     events_to_keep: str | list[str] | None = None,
@@ -82,4 +79,9 @@ def summary_events(
         If `event_column` is not present in `df.columns`.
     """
     
-    return df
+    return df.columns.values
+
+if __name__ == '__main__':
+    df = pd.read_parquet('sandbox\\sofia.parquet')
+
+    print(summary_events(df))
