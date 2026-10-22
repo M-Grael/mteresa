@@ -86,11 +86,6 @@ def summary_events(
     if isinstance(events_to_drop, str):
         events_to_drop = [events_to_drop]
 
-    print(df[event_column].unique())
-    print(df.columns.values)
-    print(df[event_column])
-    print(np.sort(df['session_id'].unique()))
-
     df_filtered = df.copy()
 
     if events_to_keep is not None:
