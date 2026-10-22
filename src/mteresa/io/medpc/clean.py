@@ -561,24 +561,7 @@ def _styling_final_dataframe(df, drop_zeros, drop_lists, guess_session, irt_key)
         df = df.reset_index(drop=True)
         df['session'] = df.groupby('subject').cumcount() + 1
 
-        first_cols_not_timestamp = [
-            'session', 'subject', 'start_date', 'end_date', 
-            'start_time', 'end_time', 'msn', 'experiment', 
-            'group', 'box', 'duration'
-        ]
 
-        first_cols_with_timestamp = [
-            'session', 'subject', 'timestamp', 'event_type', 'event_alias', 
-            'start_date', 'end_date', 'start_time', 'end_time', 'msn', 
-            'experiment', 'group', 'box', 'duration'
-        ]
-        if 'timestamp' in list(df.columns.values):
-            main_cols = [col for col in first_cols_with_timestamp if col in df.columns]
-        else:  main_cols = [col for col in first_cols_not_timestamp if col in df.columns]
-
-        cols = main_cols + [col for col in df.columns if col not in main_cols]
-
-        df = df[cols]
 
     # ========================================================================
     #                             EXPLODE
@@ -631,6 +614,29 @@ def _styling_final_dataframe(df, drop_zeros, drop_lists, guess_session, irt_key)
         df['event_type'] = '---'
         df['event_alias'] = 'operant generic response'
 
+    # ========================================================================
+    #                     Columns order
+    # ========================================================================
+
+    first_cols_not_timestamp = [
+        'session_id', 'session', 'subject', 'start_date', 'end_date', 
+        'start_time', 'end_time', 'msn', 'experiment', 
+        'group', 'box', 'duration'
+        ]
+
+    first_cols_with_timestamp = [
+        'session_id', 'session', 'subject', 'timestamp', 'event_type', 
+        'event_alias', 'start_date', 'end_date', 'start_time', 'end_time',  
+        'msn', 'experiment', 'group', 'box', 'duration'
+        ]
+    
+    if 'timestamp' in list(df.columns.values):
+        main_cols = [col for col in first_cols_with_timestamp if col in df.columns]
+    else:  main_cols = [col for col in first_cols_not_timestamp if col in df.columns]
+
+    cols = main_cols + [col for col in df.columns if col not in main_cols]
+
+    df = df[cols]
 
     return df
 

@@ -68,7 +68,7 @@ def summary_events(
     Returns
     -------
     pd.DataFrame
-        A wide melted copy of the original DataFrame.
+        A wide copy of the original DataFrame.
 
     Raises
     ------
