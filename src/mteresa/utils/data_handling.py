@@ -5,45 +5,45 @@ def filter_events(
     events_to_keep: str | list[str] | None = None,
     event_column: str = "event_alias",
 ) -> pd.DataFrame:
-  """Filter a DataFrame to include only rows with specified event names.
+    """Filter a DataFrame to include only rows with specified event names.
 
-  Parameters
-  ----------
-  df : pd.DataFrame
-      The DataFrame to filter.
-  events_to_keep : str | list[str] | None, default None
-      A single event string or a list of event strings to retain.
-  event_column : str, default 'event_alias'
-      The column name containing event names.
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame to filter.
+    events_to_keep : str | list[str] | None, default None
+        A single event string or a list of event strings to retain.
+        event_column : str, default 'event_alias'
+        The column name containing event names.
 
-  Returns
-  -------
-  pd.DataFrame
-      A filtered copy of the original DataFrame.
+    Returns
+    -------
+    pd.DataFrame
+        A filtered copy of the original DataFrame.
 
-  Raises
-  ------
-  ValueError
-      If `events_to_keep` is None.
-  KeyError
-      If `event_column` is not present in `df.columns`.
-  """
-  if events_to_keep is None:
-    raise ValueError(
-        "`events_to_keep` must be specified. Pass a single event string or a"
-        " list of event strings."
-    )
+    Raises
+    ------
+    ValueError
+        If `events_to_keep` is None.
+    KeyError
+        If `event_column` is not present in `df.columns`.
+    """
+    if events_to_keep is None:
+        raise ValueError(
+            "`events_to_keep` must be specified. Pass a single event string or a"
+            " list of event strings."
+        )
 
-  if event_column not in df.columns:
-    raise KeyError(
+    if event_column not in df.columns:
+        raise KeyError(
         f"Column '{event_column}' not found in DataFrame. Available columns:"
         f" {list(df.columns)}"
-    )
+        )
 
-  if isinstance(events_to_keep, str):
-    events_to_keep = [events_to_keep]
+    if isinstance(events_to_keep, str):
+        events_to_keep = [events_to_keep]
 
-  return df[df[event_column].isin(events_to_keep)].copy()
+    return df[df[event_column].isin(events_to_keep)].copy()
 
 def summary_events(
     df: pd.DataFrame,
