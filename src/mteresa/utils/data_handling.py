@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 def filter_events(
     df: pd.DataFrame,
@@ -88,6 +89,7 @@ def summary_events(
     print(df[event_column].unique())
     print(df.columns.values)
     print(df[event_column])
+    print(np.sort(df['session_id'].unique()))
 
     df_filtered = df.copy()
 
@@ -106,6 +108,8 @@ def summary_events(
         aggfunc='size',
         fill_value=0,
     )
+    all_ids = df[session_id_column].drop_duplicates().sort_values()
+    pivoted = pivoted.reindex(all_ids, fill_value=0)
 
     if events_to_keep is not None:
         pivoted = pivoted.reindex(columns=events_to_keep, fill_value=0)
