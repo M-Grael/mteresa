@@ -25,7 +25,6 @@ def peak_deviation_analysis(
     fails = [c for c in required_cols if c not in df.columns]
     if fails:
         raise KeyError(f"Columns {fails} not found in dataframe.")
-
 #   STEP 1
 #   ================================
 #       Clean and prepare data
@@ -52,9 +51,6 @@ def peak_deviation_analysis(
         else:
             df_analysis['IRT'] = df_analysis[timestamp_column].diff()
             df_analysis = df_analysis.dropna().reset_index(drop=True)
-            
-
-
 #   STEP 2
 #   ================================
 #      Clarify Burst and Pauses
@@ -78,6 +74,13 @@ def peak_deviation_analysis(
 
 #   STEP 3
 #   ================================
+#     Burst Ratio (BR) calculation
+#   ================================
+#           BR = Nb / [ N * ( exp(cut / (M - cut)) - 1 ) ]
+            BR = NB / (N * (np.exp(burst_cutoff / (M - burst_cutoff) - 1)))
+
+#   STEP 4
+#   ================================
 #      Pause Dataframe Stats
 #   ================================
 
@@ -86,7 +89,9 @@ def peak_deviation_analysis(
             # Fo(t) = exp(-(t - cut) / (M - cut))
             pause_df['Fo(t)'] = np.exp(-(pause_df['IRT'] - burst_cutoff) / (M - burst_cutoff))
             pause_df['Dn'] = pause_df['S(i)'] - pause_df['Fo(t)']
-    
+
+
+
     return pause_df
 
 
