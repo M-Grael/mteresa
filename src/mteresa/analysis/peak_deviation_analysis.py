@@ -7,7 +7,12 @@ def _validate_df(df):
     columns = df.columns.values
     return print(columns)
 
-def peak_deviation_analysis(df, burst_cutoff: int = 6, min_irts: int = 25, grouping_session: str = 'granulated', filter_events: str | list[str] = None): # type: ignore
+def peak_deviation_analysis(df,
+                            timestamp_column: str = 'timestamp',
+                            burst_cutoff: int = 6, 
+                            min_irts: int = 25, 
+                            grouping_session: str = 'granulated', 
+                            filter_events: str | list[str] = None):
     _validate_df(df)
     return None
 
