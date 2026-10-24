@@ -3,19 +3,29 @@ import numpy as np
 from os.path import join
 from typing import Optional
 
-def _validate_df(df):
-    columns = df.columns.values
-    return print(columns)
-
-def peak_deviation_analysis(df,
-                            timestamp_column: str = 'timestamp',
-                            burst_cutoff: int = 6, 
-                            min_irts: int = 25, 
-                            grouping_session: str = 'granulated', 
-                            filter_events: str | list[str] = None):
-    _validate_df(df)
+def peak_deviation_analysis(
+    df: pd.DataFrame,
+    timestamp_column: str = 'timestamp',
+    burst_cutoff: float = 6.0, 
+    min_irts: int = 25, 
+    grouping_index_column: str = 'session_id',
+    events_column: str = 'event_alias', 
+    filter_events: str | list[str] | None = None,
+    transform: bool = False
+) -> pd.DataFrame:
+    """
+    Performs inter-response time (IRT) peak deviation analysis on behavioral event data.
+    """
+#   ==============================
+#        Dataframe Validation
+#   ==============================
+    required_cols = [grouping_index_column, timestamp_column, events_column]
+    fails = [c for c in required_cols if c not in df.columns]
+    if fails:
+        raise KeyError(f"Columns {fails} not found in dataframe.")
+    
+    
     return None
-
 
 # def peak_deviation_analysis(irt_column, timestamp_column = None, dataframe=None, burst_cutoff=6, min_irts=25):
 #     '''
