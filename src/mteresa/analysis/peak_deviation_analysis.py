@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from os.path import join
 
+pd.options.display.float_format = '{:.2f}'.format
+
 def peak_deviation_analysis(
     df: pd.DataFrame,
     timestamp_column: str = 'timestamp',
@@ -49,17 +51,43 @@ def peak_deviation_analysis(
             pda_analysis.append({grouping_index_column: idx, 'BR': np.nan, 'PkA': np.nan, 'PkL': np.nan})
         else:
             df_analysis['IRT'] = df_analysis[timestamp_column].diff()
-            df_analysis = df_analysis.dropna()
+            df_analysis = df_analysis.dropna().reset_index(drop=True)
+            
 
 
 #   STEP 2
 #   ================================
 #      Clarify Burst and Pauses
 #   ================================
+            df_analysis['irt_type'] = np.where(df_analysis['IRT'] < burst_cutoff, 'burst', 'pause')
+            NB = (df_analysis['irt_type'] == 'burst').sum()
+            N = (df_analysis['irt_type'] == 'pause').sum()
+            M = df_analysis.loc[df_analysis['irt_type'] == 'pause', 'IRT'].mean()
+            
+            df_analysis['nb'] = NB
+            df_analysis['n'] = N
+            df_analysis['m'] = M
 
+            pause_df = (
+                df_analysis
+                .query('irt_type == "pause"')
+                .sort_values('IRT', ascending=False)
+                .reset_index(drop=True)
+                [[grouping_index_column, 'IRT', 'nb', 'n', 'm']]
+                )
 
+#   STEP 3
+#   ================================
+#      Pause Dataframe Stats
+#   ================================
+
+            pause_df['i'] = pause_df.index + 1
+            pause_df['S(i)'] = pause_df['i'] / pause_df['n']
+            # Fo(t) = exp(-(t - cut) / (M - cut))
+            pause_df['Fo(t)'] = np.exp(-(pause_df['IRT'] - burst_cutoff) / (M - burst_cutoff))
+            pause_df['Dn'] = pause_df['S(i)'] - pause_df['Fo(t)']
     
-    return df_analysis
+    return pause_df
 
 
 # def peak_deviation_analysis(irt_column, timestamp_column = None, dataframe=None, burst_cutoff=6, min_irts=25):
