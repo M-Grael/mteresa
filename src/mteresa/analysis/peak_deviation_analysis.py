@@ -1,31 +1,66 @@
 import pandas as pd
 import numpy as np
 from os.path import join
-from typing import Optional
 
 def peak_deviation_analysis(
     df: pd.DataFrame,
     timestamp_column: str = 'timestamp',
-    burst_cutoff: float = 6.0, 
-    min_irts: int = 25, 
+    burst_cutoff: float = 6.0,
+    min_irts: int = 25,
     grouping_index_column: str = 'session_id',
-    events_column: str = 'event_alias', 
+    events_column: str = 'event_alias',
     filter_events: str | list[str] | None = None,
     transform: bool = False
 ) -> pd.DataFrame:
     """
-    Performs inter-response time (IRT) peak deviation analysis on behavioral event data.
+    Implements Peak Deviation Analysis (Richards et al., 1993).
     """
-#   ==============================
-#        Dataframe Validation
-#   ==============================
+#   STEP 0
+#   ================================
+#         Dataframe Validation
+#   ================================
     required_cols = [grouping_index_column, timestamp_column, events_column]
     fails = [c for c in required_cols if c not in df.columns]
     if fails:
         raise KeyError(f"Columns {fails} not found in dataframe.")
+
+#   STEP 1
+#   ================================
+#       Clean and prepare data
+#   ================================
+    df_pda = df.copy()
+    df_pda = df_pda.dropna(subset=grouping_index_column)
     
+    if df_pda[grouping_index_column].dtype == 'int64':
+        df_pda = df_pda.sort_values(by=grouping_index_column)
     
-    return None
+    if isinstance(filter_events, str):
+        filter_events = [filter_events]
+    if not filter_events is None:
+        df_pda = df_pda[df_pda[events_column].isin(filter_events)]
+    
+    df_pda[timestamp_column] = pd.to_numeric(df_pda[timestamp_column], errors='coerce')
+    df_pda = df_pda[[grouping_index_column, timestamp_column]]
+
+    pda_analysis = []
+    for idx in df_pda[grouping_index_column].unique():
+        df_analysis  = df_pda[df_pda[grouping_index_column] == idx].reset_index(drop=True)        
+        if len(df_analysis) < min_irts:
+            pda_analysis.append({grouping_index_column: idx, 'BR': np.nan, 'PkA': np.nan, 'PkL': np.nan})
+        else:
+            df_analysis['IRT'] = df_analysis[timestamp_column].diff()
+            df_analysis = df_analysis.dropna()
+
+
+#   STEP 2
+#   ================================
+#      Clarify Burst and Pauses
+#   ================================
+
+
+    
+    return df_analysis
+
 
 # def peak_deviation_analysis(irt_column, timestamp_column = None, dataframe=None, burst_cutoff=6, min_irts=25):
 #     '''
@@ -228,4 +263,4 @@ if __name__ == '__main__':
     PATH = join('sandbox','graja.csv')
     df = pd.read_csv(PATH)
 
-    peak_deviation_analysis(df)
+    print(peak_deviation_analysis(df, min_irts=20))
