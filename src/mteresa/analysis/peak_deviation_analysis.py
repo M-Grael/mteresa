@@ -125,11 +125,32 @@ def peak_deviation_analysis(
                 PkA_second_candidate = t_pos_challenge + np.abs(t_neg)
 
                 PkA = max(PkA_first_candidate, PkA_second_candidate)
+                segment_winner = np.argmax([PkA_first_candidate, PkA_second_candidate])
 
+#   STEP 7
+#   ================================
+#               PkL 
+#   ================================
+            if t_neg > t_pos:
+                pkl_segment_df = pause_df[pause_df['i'].between(t_pos, t_neg)].copy()
+                pkl_segment_df['target'] = np.abs(dn_max - np.abs(pkl_segment_df['Dn[t(i)]']) - 0.5*PkA)
+                PkL = pkl_segment_df['target'].min()
+            
+            else: # Else block for multimodal peak checking
+                if segment_winner == 0:
+                    pkl_segment_df = pause_df[pause_df['i'].between(t_neg_challenge, t_pos)].copy()
+                    pkl_segment_df['target'] = np.abs(dn_max - np.abs(pkl_segment_df['Dn[t(i)]']) - 0.5*PkA)
+                    PkL = pkl_segment_df['target'].min()
+                else:
+                    pkl_segment_df = pause_df[pause_df['i'].between(t_neg, t_pos_challenge)].copy()
+                    pkl_segment_df['target'] = np.abs(dn_max - np.abs(pkl_segment_df['Dn[t(i)]']) - 0.5*PkA)
+                    PkL = pkl_segment_df['target'].min()
+
+            pda_analysis.append({grouping_index_column: idx, 'BR': BR, 'PkA': PkA, 'PkL': PkL})
             
                 
 
-    return pause_df
+    return pd.DataFrame(pda_analysis)
 
 
 # def peak_deviation_analysis(irt_column, timestamp_column = None, dataframe=None, burst_cutoff=6, min_irts=25):
