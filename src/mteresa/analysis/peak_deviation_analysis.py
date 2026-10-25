@@ -5,8 +5,38 @@ from os.path import join
 pd.options.display.float_format = '{:.2f}'.format
 pd.options.display.max_rows = 20
 
-def output_transformation():
-    return None
+def output_transformation(
+        original_df,
+        pda_vector,
+        index,
+        transform_method
+) -> pd.Dataframe: 
+    
+    if transform_method is None:
+        return pda_vector
+    if transform_method in ['original', 'original_df', 'original_dataframe']:
+        return pd.merge(original_df, pda_vector, on=index)
+    if transform_method in ['summary_events']:
+        from mteresa.utils.data_handling import summary_events
+        summary_df = summary_events(original_df)
+        return pd.merge(summary_df, pda_vector, on=index)
+    if transform_method in [
+        'session_and_subject', 'keep_session_and_subject', 'ses_subj', 'subj_ses' 
+        ]:
+        if not all(column in original_df.columns for column in ['session', 'subject']):
+            raise KeyError(f'transformation method failed. {transform_method} requires a input Dataframe'
+                           f'that contains the columns "session" and "subject"')
+        ses_subj_df = original_df[[index, 'session', 'subject']] 
+        return pd.merge(ses_subj_df, pda_vector, on=index)
+    if transform_method in ['session_summary', 'summary']:
+        summary = original_df[[col for col in original_df.columns if col not in
+                                ['timestamp', 'timestamp_ms', 'event_type', 
+                                'event_alias' 'IRT', 'irts', 'irt', 'irt_list',
+                                 'irt_index', 'index_irt']]]
+        summary = summary.drop_duplicates(subset=index, keep='first')
+        return pd.merge(summary, pda_vector, on=index)
+
+    
 
 def peak_deviation_analysis(
     df: pd.DataFrame,
@@ -16,7 +46,7 @@ def peak_deviation_analysis(
     grouping_index_column: str = 'session_id',
     events_column: str = 'event_alias',
     filter_events: str | list[str] | None = None,
-    transform: bool = False
+    transform: bool = None
 ) -> pd.DataFrame:
     """
     Implements Peak Deviation Analysis (Richards et al., 1993).
@@ -156,12 +186,15 @@ def peak_deviation_analysis(
                     PkL = pkl_segment_df.loc[pkl_segment_df['target'].idxmin(), 'IRT']
 
             pda_analysis.append({grouping_index_column: idx, 'BR': BR, 'PkA': PkA, 'PkL': PkL})
-            
 
-    return pd.DataFrame(pda_analysis)    
+    pda_output = output_transformation(
+        df, pda_vector=pd.DataFrame(pda_analysis), index=grouping_index_column, transform_method=transform
+        )
+    
+    return pda_output
 
 if __name__ == '__main__':
     PATH = join('sandbox','graja.csv')
     df = pd.read_csv(PATH)
 
-    print(peak_deviation_analysis(df, burst_cutoff=6, min_irts=20))
+    print(peak_deviation_analysis(df, burst_cutoff=6, min_irts=20, transform='summary'))
