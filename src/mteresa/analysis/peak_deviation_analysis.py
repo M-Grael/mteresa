@@ -88,9 +88,46 @@ def peak_deviation_analysis(
             pause_df['S(i)'] = pause_df['i'] / pause_df['n']
             # Fo(t) = exp(-(t - cut) / (M - cut))
             pause_df['Fo(t)'] = np.exp(-(pause_df['IRT'] - burst_cutoff) / (M - burst_cutoff))
-            pause_df['Dn'] = pause_df['S(i)'] - pause_df['Fo(t)']
 
+            # Gibbons, 1985, p. 63
+            cond = np.absolute(pause_df['S(i)'] - pause_df['Fo(t)']) > np.absolute(pause_df['S(i)'] - pause_df['Fo(t)'].shift())
+            pause_df['Dn[t(i)]'] = np.where(cond, pause_df['S(i)'] - pause_df['Fo(t)'], pause_df['S(i)'] - pause_df['Fo(t)'].shift())
 
+#   STEP 5
+#   ================================
+#      PkA and PkL segments
+#   ================================           
+            # t_pos is equal to the ``i`` row which ``Dn[t(i)]`` is max.
+            # t_neg is equal to the ``i`` row which ``Dn[t(i)]`` is min.
+
+            dn_max = pause_df['Dn[t(i)]'].max()
+            dn_min = pause_df['Dn[t(i)]'].min()
+
+            t_pos = pause_df.loc[pause_df['Dn[t(i)]'] == dn_max, 'i'].values[0]
+            t_neg = pause_df.loc[pause_df['Dn[t(i)]'] == dn_min, 'i'].values[0]
+
+#   STEP 6
+#   ================================
+#      PkA and multimodal check
+#   ================================
+            if t_neg > t_pos:
+                PkA = dn_max + np.abs(dn_min)
+            else:
+                pos_challenge_df = pause_df[pause_df['i'] >= t_neg].copy()
+                dn_max_challenge = pos_challenge_df['Dn[t(i)]'].max()
+                t_pos_challenge = pos_challenge_df.loc[pos_challenge_df['Dn[t(i)]'] == dn_max_challenge, 'i'].values[0]
+
+                neg_challenge_df = pause_df[pause_df['i'] <= t_pos].copy()
+                dn_min_challenge = neg_challenge_df['Dn[t(i)]'].min()
+                t_neg_challenge = neg_challenge_df.loc[neg_challenge_df['Dn[t(i)]'] == dn_min_challenge, 'i'].values[0]
+
+                PkA_first_candidate = t_pos + np.abs(t_neg_challenge)
+                PkA_second_candidate = t_pos_challenge + np.abs(t_neg)
+
+                PkA = max(PkA_first_candidate, PkA_second_candidate)
+
+            
+                
 
     return pause_df
 
@@ -296,4 +333,4 @@ if __name__ == '__main__':
     PATH = join('sandbox','graja.csv')
     df = pd.read_csv(PATH)
 
-    print(peak_deviation_analysis(df, min_irts=20))
+    print(peak_deviation_analysis(df, burst_cutoff=6, min_irts=20))
