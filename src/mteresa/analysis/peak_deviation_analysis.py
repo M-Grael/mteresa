@@ -6,8 +6,7 @@ def output_transformation(
         original_df,
         pda_vector,
         index,
-        transform_method
-) -> pd.Dataframe: 
+        transform_method):
     
     if transform_method is None:
         return pda_vector
