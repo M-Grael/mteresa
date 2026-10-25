@@ -3,6 +3,7 @@ import numpy as np
 from os.path import join
 
 pd.options.display.float_format = '{:.2f}'.format
+pd.options.display.max_rows = None
 
 def peak_deviation_analysis(
     df: pd.DataFrame,
@@ -33,7 +34,7 @@ def peak_deviation_analysis(
     df_pda = df_pda.dropna(subset=grouping_index_column)
     
     if df_pda[grouping_index_column].dtype == 'int64':
-        df_pda = df_pda.sort_values(by=grouping_index_column)
+        df_pda = df_pda.sort_values(by=grouping_index_column, kind='stable')
     
     if isinstance(filter_events, str):
         filter_events = [filter_events]
@@ -76,8 +77,11 @@ def peak_deviation_analysis(
 #   ================================
 #     Burst Ratio (BR) calculation
 #   ================================
-#           BR = Nb / [ N * ( exp(cut / (M - cut)) - 1 ) ]
-            BR = NB / (N * (np.exp(burst_cutoff / (M - burst_cutoff) - 1)))
+            if N == 0 or M <= burst_cutoff:
+                pda_analysis.append({grouping_index_column: idx, 'BR': np.nan, 'PkA': np.nan, 'PkL': np.nan})
+                continue
+
+            BR = NB / (N * (np.exp(burst_cutoff / (M - burst_cutoff)) - 1))
 
 #   STEP 4
 #   ================================
@@ -97,14 +101,14 @@ def peak_deviation_analysis(
 #   ================================
 #      PkA and PkL segments
 #   ================================           
-            # t_pos is equal to the ``i`` row which ``Dn[t(i)]`` is max.
-            # t_neg is equal to the ``i`` row which ``Dn[t(i)]`` is min.
+            # t_pos is equal to the ``IRT`` row which ``Dn[t(i)]`` is max.
+            # t_neg is equal to the ``IRT`` row which ``Dn[t(i)]`` is min.
 
             dn_max = pause_df['Dn[t(i)]'].max()
             dn_min = pause_df['Dn[t(i)]'].min()
 
-            t_pos = pause_df.loc[pause_df['Dn[t(i)]'] == dn_max, 'i'].values[0]
-            t_neg = pause_df.loc[pause_df['Dn[t(i)]'] == dn_min, 'i'].values[0]
+            t_pos = pause_df.loc[pause_df['Dn[t(i)]'] == dn_max, 'IRT'].values[0]
+            t_neg = pause_df.loc[pause_df['Dn[t(i)]'] == dn_min, 'IRT'].values[0]
 
 #   STEP 6
 #   ================================
@@ -112,39 +116,41 @@ def peak_deviation_analysis(
 #   ================================
             if t_neg > t_pos:
                 PkA = dn_max + np.abs(dn_min)
+                d_pos = dn_max
             else:
-                pos_challenge_df = pause_df[pause_df['i'] >= t_neg].copy()
+                pos_challenge_df = pause_df[pause_df['IRT'] <= t_neg].copy()
                 dn_max_challenge = pos_challenge_df['Dn[t(i)]'].max()
-                t_pos_challenge = pos_challenge_df.loc[pos_challenge_df['Dn[t(i)]'] == dn_max_challenge, 'i'].values[0]
+                t_pos_challenge = pos_challenge_df.loc[pos_challenge_df['Dn[t(i)]'] == dn_max_challenge, 'IRT'].values[0]
 
-                neg_challenge_df = pause_df[pause_df['i'] <= t_pos].copy()
+                neg_challenge_df = pause_df[pause_df['IRT'] >= t_pos].copy()
                 dn_min_challenge = neg_challenge_df['Dn[t(i)]'].min()
-                t_neg_challenge = neg_challenge_df.loc[neg_challenge_df['Dn[t(i)]'] == dn_min_challenge, 'i'].values[0]
+                t_neg_challenge = neg_challenge_df.loc[neg_challenge_df['Dn[t(i)]'] == dn_min_challenge, 'IRT'].values[0]
 
-                PkA_first_candidate = t_pos + np.abs(t_neg_challenge)
-                PkA_second_candidate = t_pos_challenge + np.abs(t_neg)
+                PkA_first_candidate = dn_max + np.abs(dn_min_challenge)
+                PkA_second_candidate = dn_max_challenge + np.abs(dn_min)
 
                 PkA = max(PkA_first_candidate, PkA_second_candidate)
                 segment_winner = np.argmax([PkA_first_candidate, PkA_second_candidate])
+                d_pos = dn_max if segment_winner == 0 else dn_max_challenge
 
 #   STEP 7
 #   ================================
 #               PkL 
 #   ================================
             if t_neg > t_pos:
-                pkl_segment_df = pause_df[pause_df['i'].between(t_pos, t_neg)].copy()
-                pkl_segment_df['target'] = np.abs(dn_max - np.abs(pkl_segment_df['Dn[t(i)]']) - 0.5*PkA)
-                PkL = pkl_segment_df['target'].min()
+                pkl_segment_df = pause_df[pause_df['IRT'].between(t_pos, t_neg)].copy()
+                pkl_segment_df['target'] = np.abs(d_pos - pkl_segment_df['Dn[t(i)]'] - 0.5*PkA)
+                PkL = pkl_segment_df.loc[pkl_segment_df['target'].idxmin(), 'IRT']
             
             else: # Else block for multimodal peak checking
                 if segment_winner == 0:
-                    pkl_segment_df = pause_df[pause_df['i'].between(t_neg_challenge, t_pos)].copy()
-                    pkl_segment_df['target'] = np.abs(dn_max - np.abs(pkl_segment_df['Dn[t(i)]']) - 0.5*PkA)
-                    PkL = pkl_segment_df['target'].min()
+                    pkl_segment_df = pause_df[pause_df['IRT'].between(t_pos, t_neg_challenge)].copy()
+                    pkl_segment_df['target'] = np.abs(d_pos - pkl_segment_df['Dn[t(i)]'] - 0.5*PkA)
+                    PkL = pkl_segment_df.loc[pkl_segment_df['target'].idxmin(), 'IRT']
                 else:
-                    pkl_segment_df = pause_df[pause_df['i'].between(t_neg, t_pos_challenge)].copy()
-                    pkl_segment_df['target'] = np.abs(dn_max - np.abs(pkl_segment_df['Dn[t(i)]']) - 0.5*PkA)
-                    PkL = pkl_segment_df['target'].min()
+                    pkl_segment_df = pause_df[pause_df['IRT'].between(t_pos_challenge, t_neg)].copy()
+                    pkl_segment_df['target'] = np.abs(d_pos - pkl_segment_df['Dn[t(i)]'] - 0.5*PkA)
+                    PkL = pkl_segment_df.loc[pkl_segment_df['target'].idxmin(), 'IRT']
 
             pda_analysis.append({grouping_index_column: idx, 'BR': BR, 'PkA': PkA, 'PkL': PkL})
             
