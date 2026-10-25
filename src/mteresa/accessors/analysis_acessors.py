@@ -7,7 +7,6 @@ class MTeresaAccessor:
         self._obj = pandas_obj
 
     def peak_deviation_analysis(self,
-        df: pd.DataFrame,
         timestamp_column: str = 'timestamp',
         burst_cutoff: float = 6.0,
         min_irts: int = 25,
@@ -15,4 +14,7 @@ class MTeresaAccessor:
         events_column: str = 'event_alias',
         filter_events: str | list[str] | None = None,
         transform: bool = None):
-        return _peak_deviation_analysis(self._obj, df=df, timestamp_column=timestamp_column)
+        return _peak_deviation_analysis(self._obj, timestamp_column=timestamp_column, burst_cutoff=burst_cutoff, 
+                                        min_irts=min_irts, grouping_index_column=grouping_index_column, events_column=events_column,
+                                        filter_events=filter_events, 
+                                        transform=transform)
