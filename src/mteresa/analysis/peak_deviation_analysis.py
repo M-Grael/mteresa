@@ -2,9 +2,6 @@ import pandas as pd
 import numpy as np
 from os.path import join
 
-pd.options.display.float_format = '{:.2f}'.format
-pd.options.display.max_rows = 20
-
 def output_transformation(
         original_df,
         pda_vector,
