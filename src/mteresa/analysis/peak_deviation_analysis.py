@@ -189,9 +189,3 @@ def peak_deviation_analysis(
         )
     
     return pda_output
-
-if __name__ == '__main__':
-    PATH = join('sandbox','graja.csv')
-    df = pd.read_csv(PATH)
-
-    print(peak_deviation_analysis(df, burst_cutoff=6, min_irts=20, transform='summary'))
