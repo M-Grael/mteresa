@@ -7,8 +7,7 @@ class TemporalRegulationModel:
         1. Hiperparâmetros e configurações da classe.
         Aqui definimos as configurações dos priors e do modelo.
         """
-        import pymc as pm
-        import arviz as az
+
         
         self.alpha_prior = alpha_prior
         self.beta_prior = beta_prior
@@ -63,6 +62,8 @@ class TemporalRegulationModel:
 
 # --- Exemplo de Uso ---
 if __name__ == "__main__":
+    import pymc as pm
+    import arviz as az
     # Dados simulados (ex: eventos temporais)
     dados = np.random.poisson(lam=5.0, size=100)
     
