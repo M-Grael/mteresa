@@ -1,5 +1,4 @@
-import pymc as pm
-import arviz as az
+
 import numpy as np
 
 class TemporalRegulationModel:
@@ -8,6 +7,9 @@ class TemporalRegulationModel:
         1. Hiperparâmetros e configurações da classe.
         Aqui definimos as configurações dos priors e do modelo.
         """
+        import pymc as pm
+        import arviz as az
+        
         self.alpha_prior = alpha_prior
         self.beta_prior = beta_prior
         
@@ -24,8 +26,9 @@ class TemporalRegulationModel:
             # Prior para a taxa/regulação inicial
             alpha = pm.Gamma('alpha', alpha=self.alpha_prior[0], beta=self.alpha_prior[1])
             
+            
             # Likelihood (Verossimilhança com base nos dados observados)
-            obs = pm.Poisson('obs', mu=alpha, observed=data)
+            like = pm.Mixture('obs', mu=alpha, observed=data)
             
         return model
 
