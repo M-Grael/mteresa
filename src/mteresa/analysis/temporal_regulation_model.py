@@ -24,10 +24,7 @@ class TemporalRegulationModel:
         timed_draw = rng.gamma(shape=k, scale=t, size=shape)
         exponential_draw = rng.exponential(scale= 1 / w, size=shape)
         return np.where(is_timed, timed_draw, exponential_draw)
-
-        
-
-
+    
     def _build_model(self, data):
         """
         2. Método privado que constrói o Grafo Probabilístico.
