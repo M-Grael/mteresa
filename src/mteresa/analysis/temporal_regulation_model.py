@@ -2,19 +2,31 @@
 import numpy as np
 
 class TemporalRegulationModel:
-    def __init__(self, alpha_prior=(2, 2), beta_prior=(2, 2)):
+    def __init__(self, df, w_prior=(2, 2), beta_prior=(2, 2)):
         """
         1. Hiperparâmetros e configurações da classe.
         Aqui definimos as configurações dos priors e do modelo.
         """
 
-        
-        self.alpha_prior = alpha_prior
+        self.df = df
+        self.w_prior = w_prior
         self.beta_prior = beta_prior
         
         # Atributos preenchidos apenas após o fit
         self.model = None
         self.trace_ = None
+    
+    def _random(self, q, w, k, t, rng=np.random.default_rng, size=None):
+        q, w, k, t = np.broadcast_arrays(q, w, k, t)
+
+        shape = size if size is not None else q.shape
+        is_timed = rng.binomial(1, q, size=shape)
+        timed_draw = rng.gamma(shape=k, scale=t, size=shape)
+        exponential_draw = rng.exponential(scale= 1 / w, size=shape)
+        return np.where(is_timed, timed_draw, exponential_draw)
+
+        
+
 
     def _build_model(self, data):
         """
@@ -23,11 +35,15 @@ class TemporalRegulationModel:
         """
         with pm.Model() as model:
             # Prior para a taxa/regulação inicial
-            alpha = pm.Gamma('alpha', alpha=self.alpha_prior[0], beta=self.alpha_prior[1])
+            gamma = pm.Gamma('gamma', alpha=self.alpha_prior[0], beta=self.alpha_prior[1])
+            w = pm.Exponential('w', lam=self.w_prior)
             
             
             # Likelihood (Verossimilhança com base nos dados observados)
-            like = pm.Mixture('obs', mu=alpha, observed=data)
+            like = pm.CustomDist(
+                'obs', 
+                random=self._random(0.2, self.w_prior, 2, 1), 
+                observed=data)
             
         return model
 
@@ -64,14 +80,10 @@ class TemporalRegulationModel:
 if __name__ == "__main__":
     import pymc as pm
     import arviz as az
-    # Dados simulados (ex: eventos temporais)
-    dados = np.random.poisson(lam=5.0, size=100)
-    
-    # Instancia o modelo
+    dados = r'sandbox\graja.csv'    
+
     trm = TemporalRegulationModel(alpha_prior=(2, 1))
     
-    # Ajusta o modelo aos dados
-    trm.fit(dados, draws=1000, tune=500)
+    trm.fit(dados, draws=200, tune=500)
     
-    # Exibe métricas estatísticas posteriores (Média, Intervalo de Credibilidade, R-hat)
     print(trm.summary())
