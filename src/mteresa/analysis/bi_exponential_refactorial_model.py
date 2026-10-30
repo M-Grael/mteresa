@@ -6,7 +6,7 @@ import pandas as pd
 # Funções da verossimilhança (ordem dos parâmetros: q, w, b)
 # ---------------------------------------------------------------
 def random_irt(q, w, b, rng=None, size=None):
-    """Sorteia IRTs (na escala de Y - D) da mistura de duas exponenciais."""
+    """Sorteia IRTs (na escala de Y - d) da mistura de duas exponenciais."""
     if rng is None:
         rng = np.random.default_rng()
     q, w, b = np.broadcast_arrays(q, w, b)
@@ -26,10 +26,34 @@ def biexp_logp(value, q, w, b):
     return pt.logaddexp(log_between, log_within)
 
 
+def _require(df, columns, why):
+    """Falha cedo, com mensagem clara, se faltar coluna."""
+    missing = [c for c in columns if c not in df.columns]
+    if missing:
+        raise KeyError(
+            f"Colunas ausentes ({why}): {missing}. "
+            f"Colunas disponíveis: {list(df.columns)}"
+        )
+
+
 # ---------------------------------------------------------------
 # Classe do modelo
 # ---------------------------------------------------------------
 class BiExponentialRefactorialModel:
+    """
+    Dois formatos de entrada são aceitos:
+
+    A) Eventos brutos: irt_column=None. O IRT é calculado a partir de
+       timestamp_column, agrupado por session_index (event_column só é
+       necessária se filter_events for usado).
+
+    B) IRTs prontos (ex.: matthew.csv): irt_column='IRT'. Não precisa de
+       timestamp, sessão nem evento.
+
+    refactorial_period_column: coluna com o período refratário d (como no
+    Stan). Se None, d é estimado como o menor IRT de cada sujeito.
+    """
+
     def __init__(
         self,
         df,
@@ -38,35 +62,55 @@ class BiExponentialRefactorialModel:
         grouping_column="group",
         event_column="event_alias",
         session_index="session_id",
+        irt_column="irt",
+        refactorial_period_column=None,
         filter_events=None,
+        w_mode="fmax",
     ):
+        if w_mode not in ("fmax", "offset"):
+            raise ValueError("w_mode deve ser 'fmax' (fiel ao Stan) ou 'offset'.")
+        self.w_mode = w_mode
+
         df = df.copy()
+        _require(df, [subject_column, grouping_column], "sempre necessárias")
 
         # Filtro de eventos (opcional)
         if filter_events is not None:
+            _require(df, [event_column], "usada em filter_events")
             if isinstance(filter_events, str):
                 filter_events = [filter_events]
             df = df[df[event_column].isin(filter_events)]
 
-        # Timestamp numérico (segundos), caso venha como data/hora
-        if pd.api.types.is_datetime64_any_dtype(df[timestamp_column]):
-            df[timestamp_column] = (
-                df[timestamp_column] - df[timestamp_column].min()
-            ).dt.total_seconds()
+        # ---- IRT ----
+        if irt_column is None:
+            # Formato A: calcula IRT a partir dos timestamps
+            _require(df, [timestamp_column, session_index], "cálculo do IRT")
+            df = df.sort_values([session_index, timestamp_column])
+            df["IRT"] = df.groupby(session_index)[timestamp_column].diff()
+            df = df.dropna(subset=["IRT"])
+        else:
+            # Formato B: IRTs já calculados
+            _require(df, [irt_column], "irt_column")
+            df["IRT"] = df[irt_column].astype(float)
 
-        # IRT = diferença entre eventos consecutivos dentro da sessão
-        df = df.sort_values([session_index, timestamp_column])
-        df["IRT"] = df.groupby(session_index)[timestamp_column].diff()
-        df = df.dropna(subset=["IRT"]).reset_index(drop=True)
+        # ---- d (período refratário) ----
+        if refactorial_period_column is None:
+            df["D"] = df.groupby(subject_column)["IRT"].transform("min")
+        else:
+            _require(df, [refactorial_period_column], "refactorial_period_column")
+            df["D"] = df[refactorial_period_column].astype(float)
 
-        # D = menor IRT de cada sujeito (estimado dos dados, tratado como conhecido)
-        df["D"] = df.groupby(subject_column)["IRT"].transform("min")
+        df = df.reset_index(drop=True)
 
         self.df = df
         self.y = df["IRT"].to_numpy(dtype=float)
         self.d = df["D"].to_numpy(dtype=float)
-        self.y_shift = self.y - self.d
-        assert np.all(self.y_shift >= 0), "Existem observações com IRT < D."
+        y_shift = self.y - self.d
+        # Tolerância para erro de ponto flutuante; negativos reais são erro nos dados
+        if np.any(y_shift < -1e-9):
+            n_bad = int((y_shift < -1e-9).sum())
+            raise ValueError(f"{n_bad} observações com IRT < d.")
+        self.y_shift = np.maximum(y_shift, 0.0)
 
         # Índice de sujeito por observação (tamanho N)
         self.subject_idx, self.subject_labels = pd.factorize(df[subject_column])
@@ -126,9 +170,11 @@ class BiExponentialRefactorialModel:
             # --- Parâmetros por sujeito na escala natural ---
             q_s = pm.math.sigmoid(-L_subject)  # = 1 / (exp(L) + 1)
             b_s = pt.exp(b_subject)
-            w_s = b_s + pt.exp(w_subject)
+            if self.w_mode == "fmax":
+                w_s = pt.maximum(b_s, pt.exp(w_subject))  # igual ao Stan
+            else:
+                w_s = b_s + pt.exp(w_subject)  # variante suave (muda w_group)
 
-            # --- Verossimilhança (ordem: q, w, b, igual às funções) ---
             pm.CustomDist(
                 "y",
                 q_s[subj],
@@ -150,6 +196,7 @@ class BiExponentialRefactorialModel:
         chains=4,
         cores=4,
         target_accept=0.95,
+        max_treedepth=15,
         nuts_sampler="pymc",
         random_seed=42,
     ):
@@ -158,22 +205,18 @@ class BiExponentialRefactorialModel:
         if self.model is None:
             self._build_model()
 
+        kwargs = {}
+        if nuts_sampler == "pymc":
+            # No Stan: max_treedepth = 15 (repassado ao passo NUTS)
+            kwargs["max_treedepth"] = max_treedepth
+
         with self.model:
             self.idata = pm.sample(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                cores=cores,
-                target_accept=target_accept,
-                nuts_sampler=nuts_sampler,
-                idata_kwargs={"log_likelihood": True},
-                random_seed=random_seed,
+                draws=draws, tune=tune, chains=chains, cores=cores,
+                target_accept=target_accept, nuts_sampler=nuts_sampler,
+                random_seed=random_seed, **kwargs,
             )
-
-            # Alguns amostradores não guardam o log_likelihood: calcula se faltar
-            if "log_likelihood" not in self.idata.groups():
-                pm.compute_log_likelihood(self.idata)
-
+            pm.compute_log_likelihood(self.idata)
             pm.sample_posterior_predictive(
                 self.idata, extend_inferencedata=True, random_seed=random_seed
             )
@@ -190,20 +233,53 @@ class BiExponentialRefactorialModel:
         ]
         return az.summary(self.idata, var_names=var_names)
 
+    def summary_natural(self):
+        """
+        Resumo na escala natural, calculado sobre as AMOSTRAS da posterior
+        (nunca sobre a média do resumo em escala log).
+ 
+        - q_between: probabilidade de uma resposta vir do between-bout
+        - b_rate, w_rate: taxas por unidade de tempo (exp do log da taxa)
+        - *_ratio: razão de taxas de cada grupo em relação ao primeiro
+        - sigma_*_fator: fator multiplicativo de variação entre sujeitos
+          (exp(sigma)); em L, sigma segue em log-odds
+ 
+        Obs.: exp(w_group) é a taxa within de um sujeito típico antes do
+        fmax; o w efetivo é max(b, exp(w_subject)).
+        """
+        import arviz as az
+        import xarray as xr
+ 
+        if self.idata is None:
+            raise ValueError("Rode .fit() antes de .summary_natural().")
+        post = self.idata.posterior
+ 
+        data = {
+            "q_between": 1.0 / (1.0 + np.exp(post["L_group"])),
+            "b_rate": np.exp(post["b_group"]),
+            "w_rate": np.exp(post["w_group"]),
+            "sigma_L": post["sigma_L"],
+            "sigma_w_fator": np.exp(post["sigma_w"]),
+            "sigma_b_fator": np.exp(post["sigma_b"]),
+        }
+        table = az.summary(xr.Dataset(data))
+ 
+        # Razões de grupo em tabela à parte (dimensão 'group' diferente)
+        if post.sizes["group"] > 1:
+            ratios = {}
+            for name, var in [("b", "b_group"), ("w", "w_group")]:
+                diff = post[var].isel(group=slice(1, None)) - post[var].isel(
+                    group=0, drop=True
+                )
+                ratios[f"{name}_ratio_vs_ref"] = np.exp(diff)
+            table = pd.concat([table, az.summary(xr.Dataset(ratios))])
+ 
+        return table
+ 
+
     def predictive_irt(self):
-        """Amostras preditivas na escala original (soma D de volta)."""
+        """Amostras preditivas na escala original (soma d de volta)."""
         if self.idata is None:
             raise ValueError("Rode .fit() antes.")
         y_rep = self.idata.posterior_predictive["y"]
         return y_rep + self.d
-
-
-if __name__ == "__main__":
-    df = pd.read_csv(r"sandbox\graja.csv")
-    model = BiExponentialRefactorialModel(df=df[df['session_id'] > 1200])
-    print(model.df[["session_id", 'group', "subject", "IRT", "D"]])
-    print(model.df["IRT"].describe())
-    print(model.y_shift.min())
-
-    model.fit(chains=4, tune=200, draws=200)
-    print(model.summary())
