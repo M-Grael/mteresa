@@ -37,6 +37,7 @@ def output_transformation(
 def peak_deviation_analysis(
     df: pd.DataFrame,
     timestamp_column: str = 'timestamp',
+    irt_column: str = None,
     burst_cutoff: float = 6.0,
     min_irts: int = 25,
     grouping_index_column: str = 'session_id',
@@ -51,7 +52,9 @@ def peak_deviation_analysis(
 #   ================================
 #         Dataframe Validation
 #   ================================
-    required_cols = [grouping_index_column, timestamp_column, events_column]
+    if irt_column is not None:
+        required_cols = [grouping_index_column, irt_column, events_column]
+    else: required_cols = [grouping_index_column, timestamp_column, events_column]
     fails = [c for c in required_cols if c not in df.columns]
     if fails:
         raise KeyError(f"Columns {fails} not found in dataframe.")
@@ -69,9 +72,11 @@ def peak_deviation_analysis(
         filter_events = [filter_events]
     if not filter_events is None:
         df_pda = df_pda[df_pda[events_column].isin(filter_events)]
-    
-    df_pda[timestamp_column] = pd.to_numeric(df_pda[timestamp_column], errors='coerce')
-    df_pda = df_pda[[grouping_index_column, timestamp_column]]
+
+    target_col = irt_column if irt_column is not None else timestamp_column
+
+    df_pda[target_col] = pd.to_numeric(df_pda[target_col], errors='coerce')
+    df_pda = df_pda[[grouping_index_column, target_col]]
 
     pda_analysis = []
     for idx in df_pda[grouping_index_column].unique():
@@ -79,8 +84,11 @@ def peak_deviation_analysis(
         if len(df_analysis) < min_irts:
             pda_analysis.append({grouping_index_column: idx, 'BR': np.nan, 'PkA': np.nan, 'PkL': np.nan})
         else:
-            df_analysis['IRT'] = df_analysis[timestamp_column].diff()
-            df_analysis = df_analysis.dropna().reset_index(drop=True)
+            if irt_column is not None:
+                df_analysis['IRT'] = df_analysis[irt_column]
+            else:
+                df_analysis['IRT'] = df_analysis[timestamp_column].diff()
+                df_analysis = df_analysis.dropna().reset_index(drop=True)
 #   STEP 2
 #   ================================
 #      Clarify Burst and Pauses
