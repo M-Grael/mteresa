@@ -57,18 +57,18 @@ class BiExponentialRefactorialModel:
     def __init__(
         self,
         df,
-        timestamp_column="timestamp",
-        subject_column="subject",
-        grouping_column="group",
-        event_column="event_alias",
-        session_index="session_id",
-        irt_column="irt",
+        timestamp_column='timestamp',
+        subject_column='subject',
+        grouping_column='group',
+        event_column='event_alias',
+        session_index='session_id',
+        irt_column=None,
         refactorial_period_column=None,
         filter_events=None,
-        w_mode="fmax",
+        w_mode='fmax',
     ):
         if w_mode not in ("fmax", "offset"):
-            raise ValueError("w_mode deve ser 'fmax' (fiel ao Stan) ou 'offset'.")
+            raise ValueError("w_mode should be 'fmax' or 'offset'.")
         self.w_mode = w_mode
 
         df = df.copy()
@@ -83,7 +83,6 @@ class BiExponentialRefactorialModel:
 
         # ---- IRT ----
         if irt_column is None:
-            # Formato A: calcula IRT a partir dos timestamps
             _require(df, [timestamp_column, session_index], "cálculo do IRT")
             df = df.sort_values([session_index, timestamp_column])
             df["IRT"] = df.groupby(session_index)[timestamp_column].diff()
@@ -109,27 +108,18 @@ class BiExponentialRefactorialModel:
         # Tolerância para erro de ponto flutuante; negativos reais são erro nos dados
         if np.any(y_shift < -1e-9):
             n_bad = int((y_shift < -1e-9).sum())
-            raise ValueError(f"{n_bad} observações com IRT < d.")
+            raise ValueError(f'{n_bad} observações com IRT < d.')
         self.y_shift = np.maximum(y_shift, 0.0)
 
         # Índice de sujeito por observação (tamanho N)
         self.subject_idx, self.subject_labels = pd.factorize(df[subject_column])
-
-        # Índice de grupo por sujeito (tamanho S), alinhado a subject_labels
-        n_groups_per_subject = df.groupby(subject_column)[grouping_column].nunique()
-        if n_groups_per_subject.max() > 1:
-            raise ValueError("Há sujeitos associados a mais de um grupo.")
-        subject_group = (
-            df.groupby(subject_column)[grouping_column]
-            .first()
-            .reindex(self.subject_labels)
-        )
-        self.group_idx, self.group_labels = pd.factorize(subject_group, sort=True)
+        
+        self.group_idx, self.group_labels = pd.factorize(df[grouping_column], sort=True)
 
         self.coords = {
-            "subject": np.asarray(self.subject_labels),
-            "group": np.asarray(self.group_labels),
-            "obs": np.arange(len(df)),
+            'subject': np.asarray(self.subject_labels),
+            'group': np.asarray(self.group_labels),
+            'obs': np.arange(len(df)),
         }
 
         self.model = None
@@ -140,50 +130,55 @@ class BiExponentialRefactorialModel:
         import pytensor.tensor as pt
 
         with pm.Model(coords=self.coords) as model:
-            subj = pm.Data("subj", self.subject_idx, dims="obs")
-            grp = pm.Data("grp", self.group_idx, dims="subject")
+            subj = pm.Data('subj', self.subject_idx, dims='obs')
+            grp = pm.Data('grp', self.group_idx, dims='obs')
 
             # --- L (log-odds de within sobre between) ---
-            sigma_L = pm.HalfNormal("sigma_L", 5)
-            L_group = pm.Normal("L_group", 0, 10, dims="group")
-            L_offset = pm.Normal("L_offset", 0, 1, dims="subject")
-            L_subject = pm.Deterministic(
-                "L_subject", L_group[grp] + L_offset * sigma_L, dims="subject"
-            )
+            sigma_L = pm.HalfNormal('sigma_L', 5)
+            L_group = pm.Normal('L_group', 0, 10, dims='group')
+            L_offset = pm.Normal('L_offset', 0, 1, dims='subject')
+            L_subj_cond = pm.Deterministic(
+                'L_subject_group',
+                L_group[None, :] + L_offset[:, None] * sigma_L,
+                dims=('subject', "group"),
+)
 
             # --- w (log da taxa within-bout) ---
-            sigma_w = pm.HalfNormal("sigma_w", 5)
-            w_group = pm.Normal("w_group", 0, 10, dims="group")
-            w_offset = pm.Normal("w_offset", 0, 1, dims="subject")
-            w_subject = pm.Deterministic(
-                "w_subject", w_group[grp] + w_offset * sigma_w, dims="subject"
+            sigma_w = pm.HalfNormal('sigma_w', 5)
+            w_group = pm.Normal('w_group', 0, 10, dims='group')
+            w_offset = pm.Normal('w_offset', 0, 1, dims='subject')
+            w_subj_cond = pm.Deterministic(
+                'w_subject_group',
+                w_group[None, :] + w_offset[:, None] * sigma_w,
+                dims=('subject', 'group'),
             )
 
             # --- b (log da taxa between-bout) ---
-            sigma_b = pm.HalfNormal("sigma_b", 5)
-            b_group = pm.Normal("b_group", 0, 10, dims="group")
-            b_offset = pm.Normal("b_offset", 0, 1, dims="subject")
-            b_subject = pm.Deterministic(
-                "b_subject", b_group[grp] + b_offset * sigma_b, dims="subject"
+            sigma_b = pm.HalfNormal('sigma_b', 5)
+            b_group = pm.Normal('b_group', 0, 10, dims='group')
+            b_offset = pm.Normal('b_offset', 0, 1, dims='subject')
+            b_subj_cond = pm.Deterministic(
+                'b_subject_group',
+                b_group[None, :] + b_offset[:, None] * sigma_b,
+                dims=('subject', 'group'),
             )
-
             # --- Parâmetros por sujeito na escala natural ---
-            q_s = pm.math.sigmoid(-L_subject)  # = 1 / (exp(L) + 1)
-            b_s = pt.exp(b_subject)
-            if self.w_mode == "fmax":
-                w_s = pt.maximum(b_s, pt.exp(w_subject))  # igual ao Stan
+            q_s = pm.math.sigmoid(-L_subj_cond)  # = 1 / (exp(L) + 1)
+            b_s = pt.exp(b_subj_cond)
+            if self.w_mode == 'fmax':
+                w_s = pt.maximum(b_s, pt.exp(w_subj_cond))
             else:
-                w_s = b_s + pt.exp(w_subject)  # variante suave (muda w_group)
+                w_s = b_s + pt.exp(w_subj_cond)
 
             pm.CustomDist(
-                "y",
-                q_s[subj],
-                w_s[subj],
-                b_s[subj],
+                'y',
+                q_s[subj, grp],
+                w_s[subj, grp],
+                b_s[subj, grp],
                 logp=biexp_logp,
                 random=random_irt,
                 observed=self.y_shift,
-                dims="obs",
+                dims='obs',
             )
 
         self.model = model
@@ -197,7 +192,7 @@ class BiExponentialRefactorialModel:
         cores=4,
         target_accept=0.95,
         max_treedepth=15,
-        nuts_sampler="pymc",
+        nuts_sampler='pymc',
         random_seed=42,
     ):
         import pymc as pm
