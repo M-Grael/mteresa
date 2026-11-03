@@ -85,19 +85,20 @@ class BiExponentialRefactorialModel:
         if irt_column is None:
             _require(df, [timestamp_column, session_index], "cálculo do IRT")
             df = df.sort_values([session_index, timestamp_column])
-            df["IRT"] = df.groupby(session_index)[timestamp_column].diff()
-            df = df.dropna(subset=["IRT"])
+            df['IRT'] = df.groupby(session_index)[timestamp_column].diff()
+            df = df.dropna(subset=['IRT'])
         else:
             # Formato B: IRTs já calculados
-            _require(df, [irt_column], "irt_column")
-            df["IRT"] = df[irt_column].astype(float)
+            _require(df, [irt_column], 'irt_column')
+            df['IRT'] = df[irt_column].astype(float)
 
         # ---- d (período refratário) ----
         if refactorial_period_column is None:
-            df["D"] = df.groupby(subject_column)["IRT"].transform("min")
+            df['D'] = df.groupby(subject_column)['IRT'].transform('min')
+            df['D'] = df['D'] * 0.99
         else:
-            _require(df, [refactorial_period_column], "refactorial_period_column")
-            df["D"] = df[refactorial_period_column].astype(float)
+            _require(df, [refactorial_period_column], 'refactorial_period_column')
+            df['D'] = df[refactorial_period_column].astype(float)
 
         df = df.reset_index(drop=True)
 
@@ -145,7 +146,7 @@ class BiExponentialRefactorialModel:
 
             # --- w (log da taxa within-bout) ---
             sigma_w = pm.HalfNormal('sigma_w', 5)
-            w_group = pm.Normal('w_group', 0, 10, dims='group')
+            w_group = pm.Normal('w_group',  0.7, 1.5, dims='group')
             w_offset = pm.Normal('w_offset', 0, 1, dims='subject')
             w_subj_cond = pm.Deterministic(
                 'w_subject_group',
@@ -155,7 +156,7 @@ class BiExponentialRefactorialModel:
 
             # --- b (log da taxa between-bout) ---
             sigma_b = pm.HalfNormal('sigma_b', 5)
-            b_group = pm.Normal('b_group', 0, 10, dims='group')
+            b_group = pm.Normal('b_group', -5, 1.5, dims='group')
             b_offset = pm.Normal('b_offset', 0, 1, dims='subject')
             b_subj_cond = pm.Deterministic(
                 'b_subject_group',
@@ -209,12 +210,17 @@ class BiExponentialRefactorialModel:
             self.idata = pm.sample(
                 draws=draws, tune=tune, chains=chains, cores=cores,
                 target_accept=target_accept, nuts_sampler=nuts_sampler,
-                random_seed=random_seed, **kwargs,
+                random_seed=random_seed, initvals={
+            'L_group': np.full(len(self.group_labels), 1.5),
+            'w_group': np.full(len(self.group_labels), 0.7),
+            'b_group': np.full(len(self.group_labels), -5.0),
+            }, **kwargs,
             )
             pm.compute_log_likelihood(self.idata)
             pm.sample_posterior_predictive(
                 self.idata, extend_inferencedata=True, random_seed=random_seed
             )
+        
         return self
 
     def summary(self):
