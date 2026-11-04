@@ -112,10 +112,13 @@ class BiExponentialRefactorialModel:
             raise ValueError(f'{n_bad} observações com IRT < d.')
         self.y_shift = np.maximum(y_shift, 0.0)
 
-        # Índice de sujeito por observação (tamanho N)
         self.subject_idx, self.subject_labels = pd.factorize(df[subject_column])
-        
         self.group_idx, self.group_labels = pd.factorize(df[grouping_column], sort=True)
+
+        S, G = len(self.subject_labels), len(self.group_labels)
+        self.cell_idx = self.subject_idx * G + self.group_idx
+        if self.cell_idx.min() < 0 or self.cell_idx.max() >= S * G:
+            raise ValueError("Índice de célula fora do intervalo (sujeito x grupo).")
 
         self.coords = {
             'subject': np.asarray(self.subject_labels),
@@ -131,8 +134,8 @@ class BiExponentialRefactorialModel:
         import pytensor.tensor as pt
 
         with pm.Model(coords=self.coords) as model:
-            subj = pm.Data('subj', self.subject_idx, dims='obs')
-            grp = pm.Data('grp', self.group_idx, dims='obs')
+            G = len(self.group_labels)
+            cell = pm.Data('cell', self.subject_idx * G + self.group_idx, dims='obs')
 
             # --- L (log-odds de within sobre between) ---
             sigma_L = pm.HalfNormal('sigma_L', 5)
@@ -141,8 +144,8 @@ class BiExponentialRefactorialModel:
             L_subj_cond = pm.Deterministic(
                 'L_subject_group',
                 L_group[None, :] + L_offset[:, None] * sigma_L,
-                dims=('subject', "group"),
-)
+                dims=('subject', "group")
+            )
 
             # --- w (log da taxa within-bout) ---
             sigma_w = pm.HalfNormal('sigma_w', 5)
@@ -173,9 +176,9 @@ class BiExponentialRefactorialModel:
 
             pm.CustomDist(
                 'y',
-                q_s[subj, grp],
-                w_s[subj, grp],
-                b_s[subj, grp],
+                q_s.flatten()[cell],
+                w_s.flatten()[cell],
+                b_s.flatten()[cell],
                 logp=biexp_logp,
                 random=random_irt,
                 observed=self.y_shift,
