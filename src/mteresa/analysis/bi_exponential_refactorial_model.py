@@ -114,6 +114,8 @@ class BiExponentialRefactorialModel:
 
         self.subject_idx, self.subject_labels = pd.factorize(df[subject_column])
         self.group_idx, self.group_labels = pd.factorize(df[grouping_column], sort=True)
+        if (self.subject_idx < 0).any() or (self.group_idx < 0).any():
+            raise ValueError("Há NaN em subject_column ou grouping_column.")
 
         S, G = len(self.subject_labels), len(self.group_labels)
         self.cell_idx = self.subject_idx * G + self.group_idx
@@ -134,8 +136,7 @@ class BiExponentialRefactorialModel:
         import pytensor.tensor as pt
 
         with pm.Model(coords=self.coords) as model:
-            G = len(self.group_labels)
-            cell = pm.Data('cell', self.subject_idx * G + self.group_idx, dims='obs')
+            cell = pm.Data('cell', self.cell_idx, dims='obs')
 
             # --- L (log-odds de within sobre between) ---
             sigma_L = pm.HalfNormal('sigma_L', 5)
