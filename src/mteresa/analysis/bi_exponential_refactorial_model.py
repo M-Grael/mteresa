@@ -36,22 +36,27 @@ def _require(df, columns, why):
         )
 
 
-# ---------------------------------------------------------------
-# Classe do modelo
-# ---------------------------------------------------------------
 class BiExponentialRefactorialModel:
     """
-    Dois formatos de entrada são aceitos:
+    This class replicates the Bi-Exponential Refactorial Model
+    (see references below). It assumes that the IRT distribution
+    are yielded by a bi modal distribution of two different 
+    exponentials. The class imports a dataframe that contains
+    the responses as observational unit and can return the 
+    posterior distribution that best fits the IRTs acording
+    to it Maximum Likelihood Estimation.
 
-    A) Eventos brutos: irt_column=None. O IRT é calculado a partir de
-       timestamp_column, agrupado por session_index (event_column só é
-       necessária se filter_events for usado).
+    Note: the attributes default values uses mteresa default
+    heuristics while trying to iterate over the dataframe. For
+    example, when you clean a MED-PC output folder using
+    ``read_medpc()``, the functions automatically saves each 
+    session with a unique id in the `session_id` column.
 
-    B) IRTs prontos (ex.: matthew.csv): irt_column='IRT'. Não precisa de
-       timestamp, sessão nem evento.
+    ---
+    attributes:
+        df: Dataframe to be iterate.
 
-    refactorial_period_column: coluna com o período refratário d (como no
-    Stan). Se None, d é estimado como o menor IRT de cada sujeito.
+
     """
 
     def __init__(
@@ -72,11 +77,10 @@ class BiExponentialRefactorialModel:
         self.w_mode = w_mode
 
         df = df.copy()
-        _require(df, [subject_column, grouping_column], "sempre necessárias")
+        _require(df, [subject_column, grouping_column], 'always necessary')
 
-        # Filtro de eventos (opcional)
         if filter_events is not None:
-            _require(df, [event_column], "usada em filter_events")
+            _require(df, [event_column], 'used in filter_events')
             if isinstance(filter_events, str):
                 filter_events = [filter_events]
             df = df[df[event_column].isin(filter_events)]
@@ -138,7 +142,7 @@ class BiExponentialRefactorialModel:
         with pm.Model(coords=self.coords) as model:
             cell = pm.Data('cell', self.cell_idx, dims='obs')
 
-            # --- L (log-odds de within sobre between) ---
+            # --- L  ---
             sigma_L = pm.HalfNormal('sigma_L', 5)
             L_group = pm.Normal('L_group', 0, 10, dims='group')
             L_offset = pm.Normal('L_offset', 0, 1, dims='subject')
@@ -148,7 +152,7 @@ class BiExponentialRefactorialModel:
                 dims=('subject', "group")
             )
 
-            # --- w (log da taxa within-bout) ---
+            # --- w ---
             sigma_w = pm.HalfNormal('sigma_w', 5)
             w_group = pm.Normal('w_group',  0.7, 1.5, dims='group')
             w_offset = pm.Normal('w_offset', 0, 1, dims='subject')
@@ -158,7 +162,7 @@ class BiExponentialRefactorialModel:
                 dims=('subject', 'group'),
             )
 
-            # --- b (log da taxa between-bout) ---
+            # --- b ---
             sigma_b = pm.HalfNormal('sigma_b', 5)
             b_group = pm.Normal('b_group', -5, 1.5, dims='group')
             b_offset = pm.Normal('b_offset', 0, 1, dims='subject')
@@ -167,7 +171,7 @@ class BiExponentialRefactorialModel:
                 b_group[None, :] + b_offset[:, None] * sigma_b,
                 dims=('subject', 'group'),
             )
-            # --- Parâmetros por sujeito na escala natural ---
+            # --- Subjects parameters in natural scale ---
             q_s = pm.math.sigmoid(-L_subj_cond)  # = 1 / (exp(L) + 1)
             b_s = pt.exp(b_subj_cond)
             if self.w_mode == 'fmax':
