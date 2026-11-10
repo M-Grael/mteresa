@@ -67,7 +67,7 @@ class BiExponentialRefactorialModel:
         filter_events=None,
         w_mode='fmax',
     ):
-        if w_mode not in ("fmax", "offset"):
+        if w_mode not in ('fmax', 'offset'):
             raise ValueError("w_mode should be 'fmax' or 'offset'.")
         self.w_mode = w_mode
 
