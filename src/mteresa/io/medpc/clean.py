@@ -525,7 +525,7 @@ def _explode_irt(df, irt_col):
     return df[~from_irt_list | (df[irt_col] != 0)]
 
 
-def _styling_final_dataframe(df, drop_zeros, drop_lists, guess_session, irt_key):
+def _styling_final_dataframe(df, drop_zeros, drop_lists, guess_session, session_file_regex, irt_key):
     # ========================================================================
     #                         HANDLE DATE FORMAT
     # ========================================================================
@@ -568,11 +568,22 @@ def _styling_final_dataframe(df, drop_zeros, drop_lists, guess_session, irt_key)
     df['session_id'] = df.index + 1
 
     # ========================================================================
-    #                          GUESS SESSION
+    #                          SESSION NUMBER
     # ========================================================================
-    if guess_session:
-        df = df.reset_index(drop=True)
+    if session_file_regex is not None:
+        # Regex on the file name takes precedence over guess_session.
+        df['session'] = df['_session_from_file'].astype('Int64')
+        n_missing = int(df['session'].isna().sum())
+        if n_missing:
+            logger.warning(
+                "%d session(s) had no session number extracted by "
+                "session_file_regex=%r; 'session' left empty for them.",
+                n_missing, session_file_regex,
+            )
+    elif guess_session:
         df['session'] = df.groupby('subject').cumcount() + 1
+
+    df = df.drop(columns='_session_from_file', errors='ignore')
 
     # ========================================================================
     #                             EXPLODE
@@ -641,6 +652,29 @@ def _styling_final_dataframe(df, drop_zeros, drop_lists, guess_session, irt_key)
     return df
 
 
+import re
+def _extract_session_from_filename(file_path: str, pattern: 're.Pattern') -> Optional[int]:
+    """Extract the session number from a file name using `pattern`.
+
+    Group priority: named group ``session`` > first capture group > whole match.
+    Uses ``search`` (not ``match``), so the number can be anywhere in the name.
+    Returns None if there is no match or the captured text is not an integer.
+    """
+    m = pattern.search(Path(file_path).name)
+    if m is None:
+        return None
+    if 'session' in m.groupdict():
+        text = m.group('session')
+    elif m.groups():
+        text = m.group(1)
+    else:
+        text = m.group(0)
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return None
+
+
 def _handle_failure(
     exc: Exception,
     file_path: str,
@@ -673,6 +707,7 @@ def read_med_folder(
     drop_zeros: bool = True,
     drop_lists: bool = False,
     guess_session: bool = False,
+    session_file_regex: Optional[str] = None,
     on_error: Literal["warn", "raise", "skip"] = "warn",
 ) -> pd.DataFrame:
     """Read all data files in a folder into a single long-format DataFrame.
@@ -707,6 +742,12 @@ def read_med_folder(
     guess_session:
         If True, creates a column called `session` by counting the sessions
         of each subject. The count needs to be continuous for each subject.
+    session_file_regex:
+        Regex applied (with ``re.search``) to each data file's *name* to get
+        the session number. Use a named group, e.g. ``r"S(?P<session>\d+)"``,
+        or a single capture group, e.g. ``r"_(\d+)$"``. Takes precedence
+        over `guess_session`. Sessions whose file name doesn't match get
+        ``<NA>`` and a warning is logged.
     on_error:
         What to do when a file fails to process:
 
@@ -740,6 +781,10 @@ def read_med_folder(
             f"on_error must be 'warn', 'raise' or 'skip', got {on_error!r}"
         )
 
+    session_pattern = None
+    if session_file_regex is not None:
+        session_pattern = re.compile(session_file_regex)
+
     rows: List[Dict] = []
     issues: List[Dict[str, str]] = []
 
@@ -765,6 +810,20 @@ def read_med_folder(
                         event_key=event_key,
                         guess_event=guess_event,
                     )
+
+                    if session_pattern is not None:
+                        session["_session_from_file"] = _extract_session_from_filename(
+                            file_path, session_pattern
+                        )
+                        if n_sessions > 1:
+                            logger.warning(
+                                "'%s' holds %d sessions; all of them get the same "
+                                "session number taken from the file name.",
+                                file_path, n_sessions,
+                            )
+
+                    rows.append(session)
+
                 except Exception as exc:
                     _handle_failure(exc, file_path, index, n_sessions, on_error, issues)
                     continue
@@ -783,7 +842,8 @@ def read_med_folder(
         drop_zeros,
         drop_lists,
         guess_session,
-        irt_key,
+        session_file_regex,
+        irt_key
     )
 
     sessions_df.attrs["issues"] = issues  # list of dicts; assign AFTER styling
