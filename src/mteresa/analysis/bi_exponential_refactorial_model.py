@@ -307,12 +307,13 @@ class BiExponentialRefactorialModel:
         post = self.idata.posterior
  
         data = {
-            "q_between": 1.0 / (1.0 + np.exp(post["L_group"])),
-            "b_rate": np.exp(post["b_group"]),
-            "w_rate": np.exp(post["w_group"]),
-            "sigma_L": post["sigma_L"],
-            "sigma_w_fator": np.exp(post["sigma_w"]),
-            "sigma_b_fator": np.exp(post["sigma_b"]),
+            'q_between': 1.0 / (1.0 + np.exp(post['L_group'])),
+            'L_length': np.exp(post['L_group']),
+            'b_rate': np.exp(post['b_group']),
+            'w_rate': np.exp(post['w_group']),
+            'sigma_L': post['sigma_L'],
+            'sigma_w_fator': np.exp(post["sigma_w"]),
+            'sigma_b_fator': np.exp(post["sigma_b"]),
         }
         table = az.summary(xr.Dataset(data))
  
