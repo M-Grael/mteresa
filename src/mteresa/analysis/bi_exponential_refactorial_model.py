@@ -27,12 +27,12 @@ def biexp_logp(value, q, w, b):
 
 
 def _require(df, columns, why):
-    """Falha cedo, com mensagem clara, se faltar coluna."""
+    """Fails early, with a clear error message."""
     missing = [c for c in columns if c not in df.columns]
     if missing:
         raise KeyError(
-            f"Colunas ausentes ({why}): {missing}. "
-            f"Colunas disponíveis: {list(df.columns)}"
+            f"Missing columns ({why}): {missing}. "
+            f"Columns Avaliable: {list(df.columns)}"
         )
 
 
