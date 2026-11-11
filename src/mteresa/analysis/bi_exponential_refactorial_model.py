@@ -3,10 +3,10 @@ import pandas as pd
 
 
 # ---------------------------------------------------------------
-# Funções da verossimilhança (ordem dos parâmetros: q, w, b)
+# likelihood functions (order of parameters: q, w, b)
 # ---------------------------------------------------------------
 def random_irt(q, w, b, rng=None, size=None):
-    """Sorteia IRTs (na escala de Y - d) da mistura de duas exponenciais."""
+    """Yield IRTs (Y - d scale) of two exponentials."""
     if rng is None:
         rng = np.random.default_rng()
     q, w, b = np.broadcast_arrays(q, w, b)
@@ -18,7 +18,7 @@ def random_irt(q, w, b, rng=None, size=None):
 
 
 def biexp_logp(value, q, w, b):
-    """Log-densidade da mistura: q*Exp(b) + (1-q)*Exp(w)."""
+    """Log-density of the mixture: q*Exp(b) + (1-q)*Exp(w)."""
     import pytensor.tensor as pt
 
     log_between = pt.log(q) + pt.log(b) - b * value
@@ -38,24 +38,67 @@ def _require(df, columns, why):
 
 class BiExponentialRefactorialModel:
     """
-    This class replicates the Bi-Exponential Refactorial Model
-    (see references below). It assumes that the IRT distribution
+    Replicates the Bi-Exponential Refactorial Model (see
+    references below). It assumes that the IRT distribution
     are yielded by a bi modal distribution of two different 
     exponentials. The class imports a dataframe that contains
     the responses as observational unit and can return the 
     posterior distribution that best fits the IRTs acording
     to it Maximum Likelihood Estimation.
 
-    Note: the attributes default values uses mteresa default
+    The class aimns to make the BERM analysis easy and 
+    friendly for the user. 
+    
+    Parameters
+    -----
+    df : pd.Dataframe 
+        Dataframe to be iterated. Each row must contain a 
+        unique response that was observed. The dataframe must 
+        also contains a column with an unique ID for each session, 
+        a column that contains timestamp or the IRT of each
+        response; a column for with grouping index for
+        hierarquical bayesian analysis. 
+    time
+    
+        timestamp_column='timestamp',
+        subject_column='subject',
+        grouping_column='group',
+        event_column='event_alias',
+        session_index='session_id',
+        irt_column=None,
+        refactorial_period_column=None,
+        filter_events=None,
+        w_mode='fmax',
+    
+    Notes
+    -----
+    The attributes default values uses mteresa default
     heuristics while trying to iterate over the dataframe. For
     example, when you clean a MED-PC output folder using
     ``read_medpc()``, the functions automatically saves each 
     session with a unique id in the `session_id` column.
 
-    ---
-    attributes:
-        df: Dataframe to be iterate.
+    References
+    -----
+    Brackney, R.J., Cheung, T.H.C., Neisewander, J.L. and 
+    Sanabria, F. (2011), THE ISOLATION OF MOTIVATIONAL, MOTORIC, 
+    AND SCHEDULE EFFECTS ON OPERANT PERFORMANCE: A MODELING APPROACH. 
+    Journal of the Experimental Analysis of Behavior, 96: 17-38. 
+    https://doi.org/10.1901/jeab.2011.96-17
 
+    Brackney RJ, Cheung THC, Sanabria F. A bout analysis of operant 
+    response disruption. Behav Processes. 2017 Aug;141(Pt 1):42-49. 
+    doi: 10.1016/j.beproc.2017.04.008. Epub 2017 Apr 19. PMID: 
+    28431947; PMCID: PMC5501476.
+
+    Falligant JM, Hagopian LP, Newland MC. Bouts, Pauses, and Units 
+    of Operant Performance: A Primer. Perspect Behav Sci. 2024 Aug 
+    30;47(3):643-674. doi: 10.1007/s40614-024-00419-z. PMID: 
+    39309239; PMCID: PMC11411050.
+
+    Contact me:
+    -----
+    m.g.grael@gmail.com
 
     """
 
@@ -292,3 +335,9 @@ class BiExponentialRefactorialModel:
             raise ValueError("Rode .fit() antes.")
         y_rep = self.idata.posterior_predictive["y"]
         return y_rep + self.d
+
+if __name__ == '__main__':
+    print(np.median.__doc__)
+
+
+    print(BiExponentialRefactorialModel.__doc__)
