@@ -36,50 +36,54 @@ def _require(df, columns, why):
         )
 
 
-class BiExponentialRefactorialModel:
+class BiExponentialRefractoryModel:
     """
-    Replicates the Bi-Exponential Refactorial Model (see
-    references below). It assumes that the IRT distribution
-    are yielded by a bi modal distribution of two different 
-    exponentials. The class imports a dataframe that contains
-    the responses as observational unit and can return the 
-    posterior distribution that best fits the IRTs acording
-    to it Maximum Likelihood Estimation.
-
-    The class aimns to make the BERM analysis easy and 
-    friendly for the user. 
+    Models the inter-response times (IRTs) as a mixture of two
+    exponentials. Performs a hierarchical Bayesian analysis at
+    the group and subject levels. The class receives a dataframe
+    of operant events and can return both descriptive and
+    inferential outputs, such as log-survivor plots (for model
+    checking) and summaries of the posterior distributions. 
     
     Parameters
-    -----
+    ----------
     df : pd.Dataframe 
         Dataframe to be iterated. Each row must contain a 
-        unique response that was observed. The dataframe must 
-        also contains a column with an unique ID for each session, 
-        a column that contains timestamp or the IRT of each
-        response; a column for with grouping index for
-        hierarquical bayesian analysis. 
-    time
+        unique event that was observed. The dataframe must 
+        also contains a column with an unique ID for each 
+        session; a column that contains timestamp of each 
+        event; a column for grouping index for hierarchical 
+        Bayesian analysis. 
+
+    timestamp_columm : str, optional, default='timestamp'
+        The column of the dataframe that contains the timestamp
+        of each event. The default value is `timestamp` because 
+        thats how mteresa's environment saves the column after 
+        cleaning raw data sheets. If the dataframe was treated 
+        before and already contains the IRTs, ``timestamp_columm`` 
+        can be setted as `None` and passing directly the 
+        ``irt_column`` argument.
     
-        timestamp_column='timestamp',
         subject_column='subject',
         grouping_column='group',
         event_column='event_alias',
         session_index='session_id',
         irt_column=None,
-        refactorial_period_column=None,
+        refractory_period_column=None,
         filter_events=None,
         w_mode='fmax',
     
     Notes
     -----
-    The attributes default values uses mteresa default
-    heuristics while trying to iterate over the dataframe. For
-    example, when you clean a MED-PC output folder using
-    ``read_medpc()``, the functions automatically saves each 
-    session with a unique id in the `session_id` column.
+    Default values of attributes use mteresa heuristics 
+    while trying to iterate over the dataframe. For example, 
+    cleaning a MED-PC output folder using ``read_medpc()`` 
+    automatically saves each session with a unique id in the
+    `session_id` column and the timestamps of each event in the
+    `timestamp` column.
 
     References
-    -----
+    ----------
     Brackney, R.J., Cheung, T.H.C., Neisewander, J.L. and 
     Sanabria, F. (2011), THE ISOLATION OF MOTIVATIONAL, MOTORIC, 
     AND SCHEDULE EFFECTS ON OPERANT PERFORMANCE: A MODELING APPROACH. 
@@ -96,8 +100,8 @@ class BiExponentialRefactorialModel:
     30;47(3):643-674. doi: 10.1007/s40614-024-00419-z. PMID: 
     39309239; PMCID: PMC11411050.
 
-    Contact me:
-    -----
+    Contact me
+    ----------
     m.g.grael@gmail.com
 
     """
@@ -111,7 +115,7 @@ class BiExponentialRefactorialModel:
         event_column='event_alias',
         session_index='session_id',
         irt_column=None,
-        refactorial_period_column=None,
+        refractory_period_column=None,
         filter_events=None,
         w_mode='fmax',
     ):
@@ -140,12 +144,12 @@ class BiExponentialRefactorialModel:
             df['IRT'] = df[irt_column].astype(float)
 
         # ---- d (período refratário) ----
-        if refactorial_period_column is None:
+        if refractory_period_column is None:
             df['D'] = df.groupby(subject_column)['IRT'].transform('min')
             df['D'] = df['D'] * 0.99
         else:
-            _require(df, [refactorial_period_column], 'refactorial_period_column')
-            df['D'] = df[refactorial_period_column].astype(float)
+            _require(df, [refractory_period_column], 'refactorial_period_column')
+            df['D'] = df[refractory_period_column].astype(float)
 
         df = df.reset_index(drop=True)
 
@@ -341,4 +345,4 @@ if __name__ == '__main__':
     print(np.median.__doc__)
 
 
-    print(BiExponentialRefactorialModel.__doc__)
+    print(BiExponentialRefractoryModel.__doc__)
