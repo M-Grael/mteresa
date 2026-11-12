@@ -775,6 +775,10 @@ def read_med_folder(
         ``pd.DataFrame(sessions.attrs["issues"])`` for a table. (A plain
         list, not a DataFrame: pandas compares ``attrs`` with ``==`` when
         printing or concatenating, which breaks on DataFrame values.)
+
+    Exemples
+    --------
+    
     """
     if on_error not in ("warn", "raise", "skip"):
         raise ValueError(

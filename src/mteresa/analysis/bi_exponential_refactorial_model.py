@@ -47,25 +47,25 @@ class BiExponentialRefractoryModel:
     
     Parameters
     ----------
-    df : pd.Dataframe 
+    df : pd.DataFrame 
         A dataframe of events. Each row corresponds to an event,
         such as 'left lever on', 'dipper on' or 'light off'. The
-        dataframe must also contain a column with a unique ID for
-        each session; a column with timestamps for all events; a
-        column with the group of each event. The ``df`` argument
-        can also accept a dataframe with calculated IRTs if already
-        processed (see ``irt_column``).
+        dataframe must contain a column with a unique ID for each 
+        session, a column with timestamps of each event, and a
+        column with the group of each event. Alternatively, ``df``
+        can already contain the IRTs (see ``irt_column``).
 
-    timestamp_columm : str, optional, default='timestamp'
+    timestamp_column : str, default='timestamp'
         The column of the dataframe that contains the timestamp
-        of each event. The default value is `timestamp` because 
-        thats how mteresa's environment saves the column after 
-        cleaning raw data sheets. If the dataframe was treated 
-        before and already contains the IRTs, ``timestamp_columm`` 
-        can be setted as `None` and passing directly the 
-        ``irt_column`` argument.
+        of each event. The default value, `timestamp`, follows the
+        heuristics of the mteresa package (see `Notes` section). 
+        If the dataframe already contains a column with IRTs, 
+        ``timestamp_column`` can be set as `None`. In that case,
+        users must provide ``irt_column``. 
     
-        subject_column='subject',
+    subject_column : str, default='subject'
+
+
         grouping_column='group',
         event_column='event_alias',
         session_index='session_id',
@@ -76,12 +76,11 @@ class BiExponentialRefractoryModel:
     
     Notes
     -----
-    Default values of attributes use mteresa heuristics 
-    while trying to iterate over the dataframe. For example, 
-    cleaning a MED-PC output folder using ``read_medpc()`` 
-    automatically saves each session with a unique id in the
-    `session_id` column and the timestamps of each event in the
-    `timestamp` column.
+    The default parameter values follow the heuristics of the 
+    mteresa package. For example, when a MED-PC output folder is 
+    cleaned with ``read_medpc()``, each session is automatically
+    saved with a unique ID in the ``session_id`` column, and the
+    timestamp of each event in the ``timestamp`` column.
 
     References
     ----------
