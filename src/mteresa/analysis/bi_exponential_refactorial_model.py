@@ -48,12 +48,13 @@ class BiExponentialRefractoryModel:
     Parameters
     ----------
     df : pd.Dataframe 
-        Dataframe to be iterated. Each row must contain a 
-        unique event that was observed. The dataframe must 
-        also contains a column with an unique ID for each 
-        session; a column that contains timestamp of each 
-        event; a column for grouping index for hierarchical 
-        Bayesian analysis. 
+        A dataframe of events. Each row corresponds to an event,
+        such as 'left lever on', 'dipper on' or 'light off'. The
+        dataframe must also contain a column with a unique ID for
+        each session; a column with timestamps for all events; a
+        column with the group of each event. The ``df`` argument
+        can also accept a dataframe with calculated IRTs if already
+        processed (see ``irt_column``).
 
     timestamp_columm : str, optional, default='timestamp'
         The column of the dataframe that contains the timestamp
