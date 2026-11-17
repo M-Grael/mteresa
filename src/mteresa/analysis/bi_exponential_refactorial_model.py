@@ -170,6 +170,15 @@ class BiExponentialRefractoryModel:
             raise ValueError("w_mode should be 'fmax' or 'offset'.")
         self.w_mode = w_mode
 
+        try:
+            import pymc
+            import arviz
+        except ImportError:
+            raise ImportError(
+                "Bayesian libraries not found. Run in your terminal:\n"
+                '    pip install "mteresa[bayes]"'
+            ) from None
+
         df = df.copy()
         _require(df, [subject_column, grouping_column], 'always necessary')
 

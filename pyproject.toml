@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mteresa"
 version = "0.1.0"
-description = "Python library for quantitative behavioural analysis"
+description = "Python library for quantitative behavioral analysis"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -13,15 +13,13 @@ dependencies = [
     "numpy>=1.24.0",
     "pandas>=2.1.0",
     "scipy>=1.10.0",
-    "pymc>=5.0.0",
-    "arviz>=0.15.0",
     "matplotlib>=3.7.0",
     "seaborn>=0.12.0",
     "statsmodels>=0.14.0",
 ]
 
 [project.optional-dependencies]
-# Backend alternativo (Stan). Instalar com: pip install "mteresa[stan]"
+# alternative Backend (Stan). Instal with: pip install "mteresa[stan]"
 stan = [
     "cmdstanpy>=1.3.0",
 ]
@@ -31,6 +29,11 @@ dev = [
     "pytest-mock>=3.10.0",
     "ipython",
     "jupyterlab",
+]
+
+bayes = [
+    "pymc>=5.0.0",
+    "arviz>=0.15.0",
 ]
 
 [tool.setuptools.packages.find]
