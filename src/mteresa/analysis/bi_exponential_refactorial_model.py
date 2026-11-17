@@ -99,7 +99,7 @@ class BiExponentialRefractoryModel:
         default value is ``None``. Only used if the  dataframe was 
         processed before. 
 
-    # refractory_period_column : str, default=None
+    refractory_period_column : str, default=None
         The column of the dataframe that contains the refractory
         period of each IRT. The default value is ``None``. It 
         requires that the dataframe was processed before.
