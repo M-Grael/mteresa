@@ -57,23 +57,70 @@ class BiExponentialRefractoryModel:
 
     timestamp_column : str, default='timestamp'
         The column of the dataframe that contains the timestamp
-        of each event. The default value, `timestamp`, follows the
-        heuristics of the mteresa package (see `Notes` section). 
+        of each event. The default value, ``timestamp``, follows the
+        heuristics of the mteresa package (see ``Notes`` section). 
         If the dataframe already contains a column with IRTs, 
-        ``timestamp_column`` can be set as `None`. In that case,
-        users must provide ``irt_column``. 
+        ``timestamp_column`` can be set to `None`. In that case,
+        users must provide ``irt_column``.
     
     subject_column : str, default='subject'
-
-
-        grouping_column='group',
-        event_column='event_alias',
-        session_index='session_id',
-        irt_column=None,
-        refractory_period_column=None,
-        filter_events=None,
-        w_mode='fmax',
+        The column of the dataframe that contains the subject 
+        label of each event. The default value is ``subject``. 
+        All events must have a subject and group label (see 
+        ``grouping_column``).
     
+    grouping_column : str, default='group'
+        The column of the dataframe that contains the group label 
+        of each event. The default value is ``group``. The parameter
+        provides flexibility to work with the events. The group 
+        label could refer to the group in which the subjects 
+        vary. However, as the label refers to the group of the 
+        event, one subject could have events with different labels.
+        For example, the group label could refer to the side of the 
+        operant box in which the lever was pressed (``'left'`` or ``'right'``).
+        Additionally, for longitudinal experimental designs, in which
+        all subjects are exposed to the same interventions, the group
+        label could refer to the condition of each event. 
+
+        During model fitting, subject parameters are drawn from the
+        group-level distribution (see ``Notes`` section).
+
+    event_column : str, default='event_alias'
+        The column of the dataframe that contains the names of the
+        events. The default value is ``event_alias``.
+    
+    session_index : str, default='session_id'
+        The column of the dataframe that contains the unique 
+        identifier for sessions. The default value is 
+        ``session_id``.
+    
+    irt_column : str, default=None
+        The column of the dataframe that contains the IRTs. The 
+        default value is ``None``. Only used if the  dataframe was 
+        processed before. 
+
+    # refractory_period_column : str, default=None
+        The column of the dataframe that contains the refractory
+        period of each IRT. The default value is ``None``. It 
+        requires that the dataframe was processed before.
+    
+    filter_events : str or list of str, default=None
+        Only events whose name appears in the provided string or
+        list are kept. If set to the default value, ``None``, no
+        filter is applied. A single string keeps only one event,
+        and a list of strings keeps multiple events.
+    
+    
+    Other Parameters
+    ----------------
+    w_mode : {'fmax', 'offset'}, default='fmax'    
+        Constraint type applied to the `w` parameter during fitting.
+        For theoretical reasons, `w` must be greater than `b`:
+        - ``'fmax'`` : `w` is computed as the element-wise maximum 
+        of `b` and ``exp(w_subj_cond)``.
+        - ``'offset'`` : `w` is parameterized as a positive offset
+        added to `b`(i.e., ``b + exp(w_subj_cond)``).
+        
     Notes
     -----
     The default parameter values follow the heuristics of the 
@@ -134,21 +181,20 @@ class BiExponentialRefractoryModel:
 
         # ---- IRT ----
         if irt_column is None:
-            _require(df, [timestamp_column, session_index], "cálculo do IRT")
+            _require(df, [timestamp_column, session_index], "IRT calculation")
             df = df.sort_values([session_index, timestamp_column])
             df['IRT'] = df.groupby(session_index)[timestamp_column].diff()
             df = df.dropna(subset=['IRT'])
         else:
-            # Formato B: IRTs já calculados
             _require(df, [irt_column], 'irt_column')
             df['IRT'] = df[irt_column].astype(float)
 
-        # ---- d (período refratário) ----
+        # ---- d ----
         if refractory_period_column is None:
             df['D'] = df.groupby(subject_column)['IRT'].transform('min')
             df['D'] = df['D'] * 0.99
         else:
-            _require(df, [refractory_period_column], 'refactorial_period_column')
+            _require(df, [refractory_period_column], 'refractory_period_column')
             df['D'] = df[refractory_period_column].astype(float)
 
         df = df.reset_index(drop=True)
@@ -160,7 +206,7 @@ class BiExponentialRefractoryModel:
         # Tolerância para erro de ponto flutuante; negativos reais são erro nos dados
         if np.any(y_shift < -1e-9):
             n_bad = int((y_shift < -1e-9).sum())
-            raise ValueError(f'{n_bad} observações com IRT < d.')
+            raise ValueError(f'{n_bad} observations with IRT < d.')
         self.y_shift = np.maximum(y_shift, 0.0)
 
         self.subject_idx, self.subject_labels = pd.factorize(df[subject_column])
@@ -181,6 +227,7 @@ class BiExponentialRefractoryModel:
 
         self.model = None
         self.idata = None
+
 
     def _build_model(self):
         import pymc as pm
