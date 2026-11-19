@@ -5,6 +5,25 @@ import pandas as pd
 
 
 # ---------------------------------------------------------------
+# Default priors. Each entry is (mu, sd) for Normal priors and a
+# single sd for the HalfNormal priors of the sigma_* parameters.
+# Sampling is done in the time unit of the data (e.g., seconds):
+#   L_group : logit scale (q = 1 / (1 + exp(L)))
+#   w_group : log scale, rate in 1 / (time unit of the data)
+#   b_group : log scale, rate in 1 / (time unit of the data)
+# The priors below assume IRTs in seconds.
+# ---------------------------------------------------------------
+DEFAULT_PRIORS = {
+    'L_group': (1.0, 1.5),
+    'w_group': (0.5, 1.0),
+    'b_group': (-3.0, 1.5),
+    'sigma_L': 1.0,
+    'sigma_w': 1.0,
+    'sigma_b': 1.0,
+}
+
+
+# ---------------------------------------------------------------
 # likelihood functions (order of parameters: L, w, b)
 # L is the logit of the "within" probability: q = 1 / (1 + exp(L))
 # ---------------------------------------------------------------
@@ -116,16 +135,16 @@ class BiExponentialRefractoryModel:
         filter is applied. A single string keeps only one event,
         and a list of strings keeps multiple events.
 
-    irt_within_group : bool, default=False
-        Only used when IRTs are computed from timestamps. If
-        ``False``, IRTs are computed between consecutive events of
-        a session, and each IRT receives the group label of the
-        second event. If ``True``, IRTs are computed between
-        consecutive events of the same session *and* the same group
-        label (e.g., only between presses of the same lever).
-
     Other Parameters
     ----------------
+    irt_within_group : bool, default=True
+        Only used when IRTs are computed from timestamps. If ``True``,
+        IRTs are computed between consecutive events of the same
+        session *and* the same group label (e.g., only between presses
+        of the same lever). If ``False``, IRTs are computed between
+        consecutive events of a session, and each IRT receives the group
+        label of the second event.
+
     w_mode : {'offset', 'fmax'}, default='offset'
         Constraint type applied to the `w` parameter during fitting.
         For theoretical reasons, `w` must be greater than `b`:
@@ -137,6 +156,27 @@ class BiExponentialRefractoryModel:
             of `b` and ``exp(w_subj_cond)``. This is not smooth and
             can hinder NUTS sampling.
 
+    priors : dict, default=None
+        Overrides of the default priors (see ``DEFAULT_PRIORS``).
+        Only the keys provided are changed. Valid keys:
+
+            ``'L_group'``, ``'w_group'``, ``'b_group'`` : ``(mu, sd)``
+            of a Normal prior.
+
+            ``'sigma_L'``, ``'sigma_w'``, ``'sigma_b'`` : sd of a
+            HalfNormal prior.
+
+        Sampling is done in the time unit of the data, and the default
+        priors assume seconds. If the data are in another unit, rescale
+        the data or adjust ``b_group`` and ``w_group``.
+        Example: ``priors={'b_group': (-2.0, 1.0)}``.
+
+    b_time_scale : float, default=60.0
+        Factor used only to *report* ``b`` in ``summary_natural()``.
+        With data in seconds, the default (60) reports ``b`` in bouts
+        per minute. Use 1 to report ``b`` in the unit of the data
+        (1/s). The model itself always samples ``b`` in 1/(time unit
+        of the data).
 
     Notes
     -----
@@ -184,11 +224,25 @@ class BiExponentialRefractoryModel:
         refractory_period_column=None,
         filter_events=None,
         w_mode='offset',
-        irt_within_group=False,
+        irt_within_group=True,
+        priors=None,
+        b_time_scale=60.0,
     ):
         if w_mode not in ('fmax', 'offset'):
             raise ValueError("w_mode should be 'fmax' or 'offset'.")
         self.w_mode = w_mode
+
+        priors = {} if priors is None else dict(priors)
+        unknown = set(priors) - set(DEFAULT_PRIORS)
+        if unknown:
+            raise KeyError(
+                f"Unknown prior(s): {sorted(unknown)}. Valid keys: {list(DEFAULT_PRIORS)}"
+            )
+        self.priors = {**DEFAULT_PRIORS, **priors}
+
+        if b_time_scale <= 0:
+            raise ValueError("b_time_scale must be positive.")
+        self.b_time_scale = float(b_time_scale)
 
         try:
             import pymc  # noqa: F401
@@ -278,12 +332,14 @@ class BiExponentialRefractoryModel:
         import pymc as pm
         import pytensor.tensor as pt
 
+        p = self.priors
+
         with pm.Model(coords=self.coords) as model:
             cell = pm.Data('cell', self.cell_idx, dims='obs')
 
             # --- L  ---
-            sigma_L = pm.HalfNormal('sigma_L', 5)
-            L_group = pm.Normal('L_group', 0, 10, dims='group')
+            sigma_L = pm.HalfNormal('sigma_L', p['sigma_L'])
+            L_group = pm.Normal('L_group', *p['L_group'], dims='group')
             L_offset = pm.Normal('L_offset', 0, 1, dims='subject')
             L_subj_cond = pm.Deterministic(
                 'L_subject_group',
@@ -292,8 +348,8 @@ class BiExponentialRefractoryModel:
             )
 
             # --- w ---
-            sigma_w = pm.HalfNormal('sigma_w', 5)
-            w_group = pm.Normal('w_group', 0.7, 1.5, dims='group')
+            sigma_w = pm.HalfNormal('sigma_w', p['sigma_w'])
+            w_group = pm.Normal('w_group', *p['w_group'], dims='group')
             w_offset = pm.Normal('w_offset', 0, 1, dims='subject')
             w_subj_cond = pm.Deterministic(
                 'w_subject_group',
@@ -302,8 +358,8 @@ class BiExponentialRefractoryModel:
             )
 
             # --- b ---
-            sigma_b = pm.HalfNormal('sigma_b', 5)
-            b_group = pm.Normal('b_group', -5, 1.5, dims='group')
+            sigma_b = pm.HalfNormal('sigma_b', p['sigma_b'])
+            b_group = pm.Normal('b_group', *p['b_group'], dims='group')
             b_offset = pm.Normal('b_offset', 0, 1, dims='subject')
             b_subj_cond = pm.Deterministic(
                 'b_subject_group',
@@ -345,8 +401,20 @@ class BiExponentialRefractoryModel:
         random_seed=42,
         compute_log_likelihood=False,
         posterior_predictive=False,
+        initvals=None,
     ):
+        """
+        ``initvals`` controls the starting point of the group parameters:
 
+            ``None`` (default) : the mean of each prior.
+
+            ``False`` : no initial values are passed (PyMC chooses).
+
+            dict : overrides only the keys given, e.g.
+            ``{'b_group': -2.0}``. Valid keys: ``'L_group'``,
+            ``'w_group'``, ``'b_group'``. Values are scalars applied to
+            all groups.
+        """
         import pymc as pm
 
         if self.model is None:
@@ -356,15 +424,24 @@ class BiExponentialRefractoryModel:
         if nuts_sampler == "pymc":
             kwargs["max_treedepth"] = max_treedepth
 
+        if initvals is False:
+            init = None
+        else:
+            G = len(self.group_labels)
+            keys = ('L_group', 'w_group', 'b_group')
+            base = {k: self.priors[k][0] for k in keys}
+            user = {} if initvals is None else dict(initvals)
+            unknown = set(user) - set(keys)
+            if unknown:
+                raise KeyError(f"Unknown initval(s): {sorted(unknown)}. Valid keys: {list(keys)}")
+            base.update(user)
+            init = {k: np.full(G, float(v)) for k, v in base.items()}
+
         with self.model:
             self.idata = pm.sample(
                 draws=draws, tune=tune, chains=chains, cores=cores,
                 target_accept=target_accept, nuts_sampler=nuts_sampler,
-                random_seed=random_seed, initvals={
-                    'L_group': np.full(len(self.group_labels), 1.5),
-                    'w_group': np.full(len(self.group_labels), 0.7),
-                    'b_group': np.full(len(self.group_labels), -5.0),
-                }, **kwargs,
+                random_seed=random_seed, initvals=init, **kwargs,
             )
             if compute_log_likelihood:
                 pm.compute_log_likelihood(self.idata)
@@ -394,7 +471,7 @@ class BiExponentialRefractoryModel:
             raise ValueError("Run .fit() before .summary_natural().")
         post = self.idata.posterior
 
-        # Group-level b and w in natural scale, consistent with w_mode
+        # Group-level b and w in the unit of the data (1/s), consistent with w_mode
         b_rate = np.exp(post['b_group'])
         w_exp = np.exp(post['w_group'])
         if self.w_mode == 'offset':
@@ -402,10 +479,13 @@ class BiExponentialRefractoryModel:
         else:
             w_rate = np.maximum(b_rate, w_exp)
 
+        # b is only *reported* in bouts per time (b_time_scale = 60 -> bouts/min)
+        b_reported = b_rate * self.b_time_scale
+
         data = {
             'q_between': 1.0 / (1.0 + np.exp(post['L_group'])),
-            'L_length': np.exp(post['L_group']),
-            'b_rate': b_rate,
+            'L_length': 1 + np.exp(post['L_group']),
+            'b_bouts_per_min': b_reported,
             'w_rate': w_rate,
             'sigma_L': post['sigma_L'],
             'sigma_w_fator': np.exp(post["sigma_w"]),
@@ -461,7 +541,6 @@ class BiExponentialRefractoryModel:
                 ax.set_xlim(left=0)
                 ax.set_xscale('linear')
 
-
         # Hide extra subplots if nrows * ncols > number of groups
         for idx in range(len(self.group_labels), len(axes_flat)):
             axes_flat[idx].set_visible(False)
@@ -476,11 +555,8 @@ class BiExponentialRefractoryModel:
 if __name__ == '__main__':
     df = pd.read_csv(Path('sandbox') / 'matthew.csv')
     print(df.head())
-    model = BiExponentialRefractoryModel(
-        df,
-        irt_column='IRT',
-        refractory_period_column='d',
-        grouping_column='G',
-        subject_column='Subject',
-    )
+    model = BiExponentialRefractoryModel(df, irt_column='IRT', grouping_column='g')
     model.plot_survivor_function()
+    results = model.fit(tune=400, draws=400)
+    print(results.summary())
+    print(results.summary_natural())
