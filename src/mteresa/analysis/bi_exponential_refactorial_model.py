@@ -209,6 +209,9 @@ class BiExponentialRefractoryModel:
         df = df.reset_index(drop=True)
 
         self.df = df
+        self.grouping_column = grouping_column
+        self.timestamp_column = timestamp_column
+
         self.y = df["IRT"].to_numpy(dtype=float)
         self.d = df["D"].to_numpy(dtype=float)
         y_shift = self.y - self.d
@@ -389,7 +392,6 @@ class BiExponentialRefractoryModel:
  
         return table
  
-
     def predictive_irt(self):
         """Amostras preditivas na escala original (soma d de volta)."""
         if self.idata is None:
@@ -397,8 +399,29 @@ class BiExponentialRefractoryModel:
         y_rep = self.idata.posterior_predictive["y"]
         return y_rep + self.d
 
+    def plot_survivor_function(self):
+        from math import ceil
+        import matplotlib.pyplot as plt
+        
+        ncols = ceil(np.sqrt(len(self.group_labels)))
+        nrows = ceil(len(self.group_labels) / ncols)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 3, nrows * 3))
+        ax = axes.flatten()
+        for idx, i in enumerate(self.group_labels):
+            ax = axes[idx]
+            plot = self.df[self.df[self.grouping_column] == i].copy()
+            plot = plot.sort_values('IRT', ascending=False).reset_index(drop=True)
+            plot['i'] = plot.index + 1
+            plot['surv'] = plot['i'] / len(plot)
+            ax.scatter(x=plot['IRT'], y=plot['surv'], color="#00000000", edgecolor='black')
+            ax.set_yscale('log')
+            ax.set_xlim(left=0)
+
+        plt.show()
+        return None
+
 if __name__ == '__main__':
-    print(np.median.__doc__)
-
-
-    print(BiExponentialRefractoryModel.__doc__)
+    df = pd.read_csv('sandbox\\sofia_treated.csv')
+    print(df.head())
+    model = BiExponentialRefractoryModel(df)
+    model.plot_survivor_function()
