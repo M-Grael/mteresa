@@ -566,6 +566,8 @@ class BiExponentialRefractoryModel:
             ax.set_yscale('log')
             ax.set_xlim(left=0)
             ax.text(0.98, 0.98, grp, transform=ax.transAxes, va='top', ha='right')
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
 
             if scale == 'log_log':
                 ax.set_xlim(left=0.1)
@@ -590,6 +592,6 @@ if __name__ == '__main__':
     print(df.head())
     model = BiExponentialRefractoryModel(df, irt_column='IRT', grouping_column='g')
     model.plot_survivor_function()
-    results = model.fit(tune=400, draws=400)
-    print(results.summary())
-    print(results.summary_natural())
+    # results = model.fit(tune=400, draws=400)
+    # print(results.summary())
+    # print(results.summary_natural())
