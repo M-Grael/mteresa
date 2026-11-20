@@ -1,5 +1,6 @@
 from pathlib import Path
-
+import pickle
+import warnings
 import numpy as np
 import pandas as pd
 
@@ -389,6 +390,27 @@ class BiExponentialRefractoryModel:
         self.model = model
         return model
 
+    def _save_idata(self, path):
+        """Save idata as netCDF, falling back to pickle. Never raises."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.idata.to_netcdf(path)
+            print(f"idata saved to {path}")
+            return path
+        except Exception as e:
+            warnings.warn(f"netCDF save failed ({e}); trying pickle.")
+
+        pkl_path = path.with_suffix('.pkl')
+        try:
+            with open(pkl_path, 'wb') as f:
+                pickle.dump(self.idata, f)
+            print(f"idata saved to {pkl_path} (pickle)")
+            return pkl_path
+        except Exception as e2:
+            warnings.warn(f"pickle save also failed ({e2}); idata kept only in memory.")
+            return None
+    
     def fit(
         self,
         draws=2000,
@@ -402,6 +424,7 @@ class BiExponentialRefractoryModel:
         compute_log_likelihood=False,
         posterior_predictive=False,
         initvals=None,
+        save_path=None
     ):
         """
         ``initvals`` controls the starting point of the group parameters:
@@ -414,6 +437,12 @@ class BiExponentialRefractoryModel:
             ``{'b_group': -2.0}``. Valid keys: ``'L_group'``,
             ``'w_group'``, ``'b_group'``. Values are scalars applied to
             all groups.
+
+        save_path : str or Path, default=None
+            If given, the InferenceData is saved right after sampling and
+            before ``compute_log_likelihood`` and ``posterior_predictive``,
+            so a failure (or lack of memory) in those steps does not lose
+            the posterior. Saved as netCDF, with pickle as fallback.
         """
         import pymc as pm
 
@@ -449,6 +478,9 @@ class BiExponentialRefractoryModel:
                 pm.sample_posterior_predictive(
                     self.idata, extend_inferencedata=True, random_seed=random_seed
                 )
+
+            if save_path is not None:
+                self._save_idata(save_path)
 
         return self
 
