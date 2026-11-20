@@ -727,34 +727,69 @@ def read_med_folder(
     the MSN name (see `clean`), so combining everything into a single
     DataFrame does not risk mixing unrelated data under the same column.
 
+    Besides reading, the function also post-processes the table: dates and
+    times are parsed, ``duration`` is computed (``HH:MM:SS``, handling
+    sessions that cross midnight), column names are lowercased with
+    underscores instead of spaces, sessions are sorted by start date, start
+    time and subject number, and a ``session_id`` (1-based, in that order)
+    is assigned.
+
     Parameters
     ----------
     folder_path:
         Folder to walk recursively looking for data files.
+
     msn_folder_path:
         Folder to look for `.MPC` files. See `process_data`.
+
     event_key, guess_event:
         Passed through to `clean` for each session.
+
+    irt_key:
+        Letter of the array holding inter-response times (IRTs), e.g.
+        ``"C"``. If given, each session whose IRT array is a list is
+        expanded to one row per IRT, with a 1-based ``irt_index``;
+        trailing zeros (unused MED-PC positions) are removed. The IRTs are
+        then accumulated per session into ``timestamp`` (cumulative sum),
+        with ``event_type = "---"`` and
+        ``event_alias = "operant generic response"``. The column is found
+        by name (``<irt_key>`` or ``<irt_key>_*``, case-insensitive); if no
+        such column holds lists, a warning is logged and IRTs are skipped.
+        Event and IRT sessions can coexist in the same folder. If a session
+        has both an event array and an IRT list, events take precedence and
+        the list is left unexpanded. Default `None` (no IRT processing).
+
     drop_zeros:
-        If True, drops columns containing all values equal 0.
+        If True, drops columns whose values are all equal to 0 (applied
+        after the explode steps).
+
     drop_lists:
-        If True, drops columns containing lists.
+        If True, drops columns in which every value is a list (applied
+        after the explode steps, so it only affects "leftover" arrays that
+        were not expanded).
+
     guess_session:
         If True, creates a column called `session` by counting the sessions
-        of each subject. The count needs to be continuous for each subject.
+        of each subject, in chronological order (``cumcount() + 1``). The
+        count needs to be continuous for each subject.
+
     session_file_regex:
         Regex applied (with ``re.search``) to each data file's *name* to get
         the session number. Use a named group, e.g. ``r"S(?P<session>\d+)"``,
         or a single capture group, e.g. ``r"_(\d+)$"``. Takes precedence
         over `guess_session`. Sessions whose file name doesn't match get
-        ``<NA>`` and a warning is logged.
-    on_error:
-        What to do when a file fails to process:
+        ``<NA>`` and a warning is logged. If a file holds several sessions,
+        all of them receive the same number.
 
-        - ``"warn"`` (default): skip the file and emit one summary warning.
+    on_error:
+        What to do when a file (or one session of a file) fails to process:
+
+        - ``"warn"`` (default): skip it, log each failure and emit one
+          summary ``UserWarning`` at the end.
         - ``"raise"``: stop at the first failure (``RuntimeError`` naming
           the file, chained to the original exception).
-        - ``"skip"``: skip the file silently.
+        - ``"skip"``: skip it silently (failures are only logged at DEBUG
+          level).
 
         With ``"warn"`` and ``"skip"``, the failures are kept in
         ``df.attrs["issues"]`` (see Returns).
@@ -762,24 +797,54 @@ def read_med_folder(
     Returns
     -------
     sessions:
-        One row per session (**not** yet exploded), across all MSNs.
-        To get one row per event, run::
+        A long-format DataFrame, across all MSNs, **already exploded**:
 
-            sessions.explode(["timestamp", "event_type", "event_alias"])
+        - sessions with an event array have one row per event, with the
+          columns ``timestamp``, ``event_type`` and ``event_alias``;
+        - sessions with an IRT list (see `irt_key`) have one row per IRT,
+          with ``irt_index`` and the cumulative ``timestamp``;
+        - sessions with neither keep a single row.
 
-        Use the "MSN" column to filter/group sessions by program when
-        needed. Files that failed are listed in ``sessions.attrs["issues"]``
-        as a list of ``{"file": ..., "session": ..., "error": ...}`` dicts
-        (``session`` is the 1-based block in that file, or ``None`` when
-        the whole file could not be read); use
-        ``pd.DataFrame(sessions.attrs["issues"])`` for a table. (A plain
-        list, not a DataFrame: pandas compares ``attrs`` with ``==`` when
-        printing or concatenating, which breaks on DataFrame values.)
+        The session metadata is repeated on every row of the session. The
+        main columns (``session_id``, ``session``, ``subject``,
+        ``timestamp``, ``event_type``, ``event_alias``, ``start_date``,
+        ``msn``, ...) come first. Use the ``msn`` column to filter/group by
+        program, and ``session_id`` to group the rows of one session.
 
-    Exemples
+        Failures are listed in ``sessions.attrs["issues"]`` as a list of
+        ``{"file": ..., "session": ..., "error": ...}`` dicts (``session``
+        is the 1-based block in that file, or ``None`` when the whole file
+        could not be read); use ``pd.DataFrame(sessions.attrs["issues"])``
+        for a table. (A plain list, not a DataFrame: pandas compares
+        ``attrs`` with ``==`` when printing or concatenating, which breaks
+        on DataFrame values.)
+
+    Raises
+    ------
+    ValueError
+        If `on_error` is not ``"warn"``, ``"raise"`` or ``"skip"``, or if
+        no valid MED-PC session is found in `folder_path`.
+    RuntimeError
+        On the first failure, when ``on_error="raise"``.
+
+    Examples
     --------
-    
+    Event-based sessions, with the session number taken from the file name:
+
+    >>> df = read_med_folder(
+    ...     "data/", msn_folder_path="programs/",
+    ...     session_file_regex=r"S(?P<session>\d+)",
+    ... )
+
+    Sessions that record IRTs in array ``C``, numbering sessions by subject:
+
+    >>> df = read_med_folder("data/", irt_key="C", guess_session=True)
+
+    Inspecting files that failed:
+
+    >>> pd.DataFrame(df.attrs["issues"])
     """
+    
     if on_error not in ("warn", "raise", "skip"):
         raise ValueError(
             f"on_error must be 'warn', 'raise' or 'skip', got {on_error!r}"
