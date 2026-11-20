@@ -27,7 +27,7 @@ def output_transformation(
     if transform_method in ['session_summary', 'summary']:
         summary = original_df[[col for col in original_df.columns if col not in
                                 ['timestamp', 'timestamp_ms', 'event_type', 
-                                'event_alias' 'IRT', 'irts', 'irt', 'irt_list',
+                                'event_alias', 'IRT', 'irts', 'irt', 'irt_list',
                                  'irt_index', 'index_irt']]]
         summary = summary.drop_duplicates(subset=index, keep='first')
         return pd.merge(summary, pda_vector, on=index)

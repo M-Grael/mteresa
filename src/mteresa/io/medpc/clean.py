@@ -834,6 +834,7 @@ def read_med_folder(
     >>> df = read_med_folder(
     ...     "data/", msn_folder_path="programs/",
     ...     session_file_regex=r"S(?P<session>\d+)",
+    ...     event_key='d'
     ... )
 
     Sessions that record IRTs in array ``C``, numbering sessions by subject:
@@ -890,8 +891,6 @@ def read_med_folder(
                                 "session number taken from the file name.",
                                 file_path, n_sessions,
                             )
-
-                    rows.append(session)
 
                 except Exception as exc:
                     _handle_failure(exc, file_path, index, n_sessions, on_error, issues)
