@@ -545,7 +545,7 @@ class BiExponentialRefractoryModel:
         y_rep = self.idata.posterior_predictive["y"]
         return y_rep + xr.DataArray(self.d, dims='obs')
 
-    def plot_survivor_function(self, scale='log_linear'):
+    def plot_survivor_function(self, scale='log_linear', xlim=None):
         """Plot the survivor function of IRTs for each group label in 'grouping_column'."""
         from math import ceil
         import matplotlib.pyplot as plt
@@ -575,6 +575,9 @@ class BiExponentialRefractoryModel:
             elif scale == 'log_linear':
                 ax.set_xlim(left=0)
                 ax.set_xscale('linear')
+
+            if xlim is not None:
+                ax.set_xlim(xlim)
 
         # Hide extra subplots if nrows * ncols > number of groups
         for idx in range(len(self.group_labels), len(axes_flat)):
