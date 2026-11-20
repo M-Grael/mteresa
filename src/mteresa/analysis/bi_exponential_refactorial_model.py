@@ -427,22 +427,22 @@ class BiExponentialRefractoryModel:
         save_path=None
     ):
         """
-        ``initvals`` controls the starting point of the group parameters:
-
-            ``None`` (default) : the mean of each prior.
-
-            ``False`` : no initial values are passed (PyMC chooses).
-
-            dict : overrides only the keys given, e.g.
-            ``{'b_group': -2.0}``. Valid keys: ``'L_group'``,
-            ``'w_group'``, ``'b_group'``. Values are scalars applied to
-            all groups.
+        Parameters
+        ----------
+        initvals : None, False or dict, default=None
+            Starting point of the group parameters.
+            ``None``: the mean of each prior. ``False``: no initial
+            values are passed (PyMC chooses). dict: overrides only the
+            keys given, e.g. ``{'b_group': -2.0}``. Valid keys:
+            ``'L_group'``, ``'w_group'``, ``'b_group'``. Values are
+            scalars applied to all groups.
 
         save_path : str or Path, default=None
-            If given, the InferenceData is saved right after sampling and
-            before ``compute_log_likelihood`` and ``posterior_predictive``,
-            so a failure (or lack of memory) in those steps does not lose
-            the posterior. Saved as netCDF, with pickle as fallback.
+            If given, the InferenceData is saved right after sampling
+            and before ``compute_log_likelihood`` and
+            ``posterior_predictive``, so a failure in those steps does
+            not lose the posterior. Saved as netCDF, with pickle as
+            fallback.
         """
         import pymc as pm
 
@@ -472,15 +472,16 @@ class BiExponentialRefractoryModel:
                 target_accept=target_accept, nuts_sampler=nuts_sampler,
                 random_seed=random_seed, initvals=init, **kwargs,
             )
+
+            if save_path is not None:
+                self._save_idata(save_path)
+
             if compute_log_likelihood:
                 pm.compute_log_likelihood(self.idata)
             if posterior_predictive:
                 pm.sample_posterior_predictive(
                     self.idata, extend_inferencedata=True, random_seed=random_seed
                 )
-
-            if save_path is not None:
-                self._save_idata(save_path)
 
         return self
 
