@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import re
+
 
 def filter_events(
     df: pd.DataFrame,
@@ -45,13 +47,6 @@ def filter_events(
         events_to_keep = [events_to_keep]
 
     return df[df[event_column].isin(events_to_keep)].copy()
-
-
-import pandas as pd
-
-
-import pandas as pd
-
 
 def summary_events(
     df: pd.DataFrame,
@@ -114,10 +109,48 @@ def summary_events(
 
     return pivoted.rename_axis(None, axis=1).reset_index()
 
+
+import re
+
+
+import re
+
+def summary_keys(df, keys=None):
+    if isinstance(keys, str):
+        keys = [keys]
+        
+    letters = "a-z" if keys is None else "".join(re.escape(k) for k in keys)
+    
+    if not letters:
+        return df.iloc[:, 0:0].copy()
+        
+    pattern = rf'^[{letters}](_|$)'
+    columns = [c for c in df.columns if re.match(pattern, c)]
+    
+    # Define apenas as colunas de 1 letra (ex: 'a', 'b') para checar duplicatas
+    
+    
+    key_cols = [c for c in columns if len(c) == 1]
+
+    # session_columns = [c for c in df.columns if c is in ['']]
+    subset = key_cols or columns
+    
+    if not subset:
+        return df[columns].copy()
+
+    # Converte listas para tuplas temporariamente apenas para checar duplicatas
+    temp = df[subset].map(lambda x: tuple(x) if isinstance(x, list) else x)
+    mask = ~temp.duplicated()
+    
+    return df.loc[mask, columns].copy()
+
 if __name__ == '__main__':
     import mteresa as mts
     df = mts.read_medpc(folder_path='sandbox\\data_test\\sofia_teste_data',
                         msn_folder_path='sandbox\\data_test\\sofia_teste_data',
                         guess_event=True, guess_session=True)
 
-    print(summary_events(df))
+    print(df.columns.values)
+    summary = summary_keys(df)
+    print(summary.info())
+    print(summary.head())

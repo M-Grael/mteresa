@@ -568,6 +568,7 @@ class BiExponentialRefractoryModel:
             ax.text(0.98, 0.98, grp, transform=ax.transAxes, va='top', ha='right')
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
+            ax.set_ylim(0.001, 1)
 
             if scale == 'log_log':
                 ax.set_xlim(left=0.1)
